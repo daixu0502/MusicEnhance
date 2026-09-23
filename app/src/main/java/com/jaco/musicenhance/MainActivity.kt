@@ -77,7 +77,7 @@ class MainActivity : ComponentActivity() {
             }
             MiuixTheme(controller = controller) {
                 MainScreen(
-                    deviceSupported = isSupportedDevice(),
+                    deviceName = supportedDeviceName(),
                     installedPackages = MusicAppRegistry.profiles.filter {
                         runCatching {
                             packageManager.getApplicationInfo(it.packageName, PackageManager.ApplicationInfoFlags.of(0))
@@ -91,9 +91,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun isSupportedDevice(): Boolean {
-        val device = Build.DEVICE.lowercase()
-        return device == "ruyi" || device == "bixi" || Build.MODEL.contains("MIX Flip", true)
+    private fun supportedDeviceName(): String? = when (Build.DEVICE.lowercase()) {
+        "ruyi" -> "Xiaomi MIX Flip"
+        "bixi" -> "Xiaomi MIX Flip 2"
+        else -> Build.MODEL.takeIf { it.contains("MIX Flip", ignoreCase = true) }
     }
 
     private companion object {
@@ -103,7 +104,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun MainScreen(
-    deviceSupported: Boolean,
+    deviceName: String?,
     installedPackages: Set<String>,
     onOpenLSPosed: () -> Unit,
 ) {
@@ -152,7 +153,7 @@ private fun MainScreen(
                         )
                     }
 
-                    DeviceCard(deviceSupported, installedPackages)
+                    DeviceCard(deviceName, installedPackages)
                 }
             }
         }
@@ -258,12 +259,12 @@ private fun ActivationStatusMark(connected: Boolean, color: ComposeColor, modifi
 }
 
 @Composable
-private fun DeviceCard(deviceSupported: Boolean, installedPackages: Set<String>) {
+private fun DeviceCard(deviceName: String?, installedPackages: Set<String>) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("兼容状态", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
             Text(
-                if (deviceSupported) "设备：MIX Flip 已支持" else "设备：请在 MIX Flip 1 或 2 使用",
+                deviceName?.let { "设备：$it" } ?: "设备：请在 MIX Flip 1 或 2 使用",
                 color = colorScheme.onSurfaceVariantSummary,
             )
             MusicAppRegistry.profiles.forEach { profile ->
