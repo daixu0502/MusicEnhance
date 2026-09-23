@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">音乐外屏增强</string>
+    <string name="app_version">版本 %1$s</string>
+    <string name="xposed_description">为小米 MIX Flip 1 和 2 提供专用 QQ 音乐外屏播放器</string>
+</resources>
