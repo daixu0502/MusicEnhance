@@ -98,7 +98,7 @@
 
 ## 本地构建
 
-需要 **JDK 17** 和 **Android SDK Platform 37**。使用项目自带的 Gradle Wrapper，无需另外安装 Gradle；首次构建需要联网下载依赖。
+需要 **JDK 17** 和 **Android SDK Platform 37.0**（SDK 包名 `platforms;android-37.0`）。使用项目自带的 Gradle Wrapper，无需另外安装 Gradle；首次构建需要联网下载依赖。
 
 将项目导入 Android Studio 并配置 SDK 路径，或通过本地 `local.properties` 设置 `sdk.dir`。当前构建配置可查看 [app/build.gradle.kts](app/build.gradle.kts) 和 [版本目录](gradle/libs.versions.toml)。
 

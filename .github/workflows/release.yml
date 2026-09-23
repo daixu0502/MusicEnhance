@@ -35,6 +35,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Command-line Tools 21.0: Java 17 compatible, supports major.minor SDK versions.
+          cmdline-tools-version: '15641748'
+          # Override the action default: the obsolete "tools" package is no longer available.
+          packages: 'platform-tools'
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -53,9 +58,9 @@ jobs:
       - name: Install required Android packages
         if: steps.plan.outputs.publish == 'true'
         env:
-          COMPILE_SDK: ${{ steps.plan.outputs.compile_sdk }}
+          SDK_PLATFORM_PACKAGE: ${{ steps.plan.outputs.sdk_platform_package }}
           BUILD_TOOLS: ${{ steps.plan.outputs.build_tools }}
-        run: sdkmanager "platforms;android-$COMPILE_SDK" "build-tools;$BUILD_TOOLS"
+        run: sdkmanager "$SDK_PLATFORM_PACKAGE" "build-tools;$BUILD_TOOLS"
 
       - name: Test, check and build signed release
         if: steps.plan.outputs.publish == 'true'

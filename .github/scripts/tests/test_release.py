@@ -43,6 +43,27 @@ class FakeGitHub:
 
 
 class VersionAndNotesTests(unittest.TestCase):
+    def test_platform_packages_keep_required_minor_versions(self):
+        metadata = {"versionName": "2.0.5", "versionCode": 41, "buildToolsVersion": "36.0.0"}
+        for major, minor, expected in (
+            (35, 0, "platforms;android-35"),
+            (36, 0, "platforms;android-36"),
+            (36, 1, "platforms;android-36.1"),
+            (37, 0, "platforms;android-37.0"),
+            (37, 2, "platforms;android-37.2"),
+        ):
+            with self.subTest(major=major, minor=minor):
+                self.assertEqual(expected, release.sdk_platform_package({
+                    **metadata, "compileSdk": major, "compileSdkMinor": minor,
+                }))
+        self.assertEqual("platforms;android-37.0", release.sdk_platform_package({**metadata, "compileSdk": 37}))
+
+    def test_invalid_minor_versions_are_rejected(self):
+        metadata = {"versionName": "2.0.5", "versionCode": 41, "compileSdk": 37, "buildToolsVersion": "36.0.0"}
+        for minor in (-1, "0", True, "0;tools"):
+            with self.subTest(minor=minor), self.assertRaises(ValueError):
+                release.sdk_platform_package({**metadata, "compileSdkMinor": minor})
+
     def test_numeric_versions_are_stable_and_beta_variants_are_previews(self):
         for value in ("2.0", "2.0.1", "12.31.0"):
             self.assertFalse(release.classify_version(value))

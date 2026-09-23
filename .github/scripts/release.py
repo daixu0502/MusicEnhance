@@ -35,9 +35,21 @@ def validate_metadata(metadata):
     for name in ("versionCode", "compileSdk"):
         if type(metadata[name]) is not int or metadata[name] <= 0:
             raise ValueError(f"{name} must be a positive integer")
+    minor = metadata.get("compileSdkMinor", 0)
+    if type(minor) is not int or minor < 0:
+        raise ValueError("compileSdkMinor must be a non-negative integer")
     if not re.fullmatch(r"\d+\.\d+\.\d+", metadata["buildToolsVersion"]):
         raise ValueError("buildToolsVersion must identify a stable Android build-tools package")
     return prerelease
+
+
+def sdk_platform_package(metadata):
+    """SDK 37+ base platforms include .0; older base platforms use the major alone."""
+    validate_metadata(metadata)
+    major = metadata["compileSdk"]
+    minor = metadata.get("compileSdkMinor", 0)
+    version = f"{major}.{minor}" if major >= 37 or minor > 0 else str(major)
+    return f"platforms;android-{version}"
 
 
 def git(*arguments, check=True):
@@ -185,7 +197,7 @@ def prepare():
     WORK.mkdir(parents=True, exist_ok=True)
     PLAN.write_text(json.dumps(plan, indent=2), encoding="utf-8")
     NOTES.write_text(notes, encoding="utf-8")
-    for name, value in {"publish": "true", "version": version, "compile_sdk": metadata["compileSdk"],
+    for name, value in {"publish": "true", "version": version, "sdk_platform_package": sdk_platform_package(metadata),
                         "build_tools": metadata["buildToolsVersion"]}.items():
         output(name, value)
     summary(f"计划发布 {tag}（{'Pre-release' if prerelease else 'Release'}）；改动基准：{previous_tag or '仓库起点'}。")

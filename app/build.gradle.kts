@@ -61,6 +61,7 @@ val releaseMetadata = mapOf(
     "versionName" to requireNotNull(android.defaultConfig.versionName),
     "versionCode" to requireNotNull(android.defaultConfig.versionCode),
     "compileSdk" to requireNotNull(android.compileSdk),
+    "compileSdkMinor" to (android.compileSdkMinor ?: 0),
     "buildToolsVersion" to android.buildToolsVersion,
 )
 val releaseMetadataFile = layout.buildDirectory.file("release-metadata.json")
