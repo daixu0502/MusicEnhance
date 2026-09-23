@@ -78,6 +78,16 @@ internal object MediaSessionStore {
         else PlayerProcessBridge.sendCommand(PlayerProcessBridge.COMMAND_SEEK, positionMs)
     }
 
+    fun seekAndPlay(positionMs: Long) {
+        val current = controller
+        if (current != null) {
+            current.transportControls.seekTo(positionMs.coerceAtLeast(0))
+            current.transportControls.play()
+        } else {
+            PlayerProcessBridge.sendCommand(PlayerProcessBridge.COMMAND_SEEK_AND_PLAY, positionMs)
+        }
+    }
+
     fun repeat(): Boolean {
         if (controller != null) return performCustomAction("repeat", "cycle", "loop", "mode", "循环", "单曲")
         PlayerProcessBridge.sendCommand(PlayerProcessBridge.COMMAND_REPEAT)
@@ -112,6 +122,7 @@ internal object MediaSessionStore {
             PlayerProcessBridge.COMMAND_PREVIOUS -> current.transportControls.skipToPrevious()
             PlayerProcessBridge.COMMAND_NEXT -> current.transportControls.skipToNext()
             PlayerProcessBridge.COMMAND_SEEK -> current.transportControls.seekTo(positionMs.coerceAtLeast(0))
+            PlayerProcessBridge.COMMAND_SEEK_AND_PLAY -> seekAndPlay(positionMs)
             PlayerProcessBridge.COMMAND_REPEAT -> performCustomAction(
                 "repeat", "cycle", "loop", "mode", "循环", "单曲",
             )

@@ -13,8 +13,8 @@ android {
         applicationId = "com.jaco.musicenhance"
         minSdk = 35
         targetSdk = 37
-        versionCode = 29
-        versionName = "1.28"
+        versionCode = 41
+        versionName = "2.0.5"
     }
 
     val releaseKeystore = providers.environmentVariable("MUSICENHANCE_KEYSTORE").orNull
@@ -56,6 +56,27 @@ kotlin {
     jvmToolchain(17)
 }
 
+// CI reads the resolved Android configuration instead of duplicating version/SDK values in YAML.
+val releaseMetadata = mapOf(
+    "versionName" to requireNotNull(android.defaultConfig.versionName),
+    "versionCode" to requireNotNull(android.defaultConfig.versionCode),
+    "compileSdk" to requireNotNull(android.compileSdk),
+    "buildToolsVersion" to android.buildToolsVersion,
+)
+val releaseMetadataFile = layout.buildDirectory.file("release-metadata.json")
+tasks.register("writeReleaseMetadata") {
+    group = "publishing"
+    description = "Exports the app version and SDK requirements for GitHub Releases."
+    inputs.properties(releaseMetadata)
+    outputs.file(releaseMetadataFile)
+    doLast {
+        releaseMetadataFile.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText(groovy.json.JsonOutput.toJson(releaseMetadata))
+        }
+    }
+}
+
 // Keep Miuix and the complete Compose runtime family on one locally available version.
 configurations.configureEach {
     resolutionStrategy.eachDependency {
@@ -79,6 +100,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
     debugImplementation(libs.androidx.compose.ui.tooling)
     compileOnly(libs.libxposed.api)
     implementation(libs.libxposed.service)

@@ -1,0 +1,102 @@
+name: Build and publish release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: musicenhance-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out source and complete tag history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test publishing rules
+        run: python3 -m unittest discover -s .github/scripts/tests -v
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Read resolved app version and SDK requirements
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --no-configuration-cache :app:writeReleaseMetadata
+
+      - name: Select release channel and previous version
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/release.py prepare
+
+      - name: Install required Android packages
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          COMPILE_SDK: ${{ steps.plan.outputs.compile_sdk }}
+          BUILD_TOOLS: ${{ steps.plan.outputs.build_tools }}
+        run: sdkmanager "platforms;android-$COMPILE_SDK" "build-tools;$BUILD_TOOLS"
+
+      - name: Test, check and build signed release
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          MUSICENHANCE_KEYSTORE: ${{ runner.temp }}/musicenhance-release.jks
+          MUSICENHANCE_KEYSTORE_BASE64: ${{ secrets.MUSICENHANCE_KEYSTORE_BASE64 }}
+          MUSICENHANCE_KEY_ALIAS: ${{ secrets.MUSICENHANCE_KEY_ALIAS }}
+          MUSICENHANCE_STORE_PASSWORD: ${{ secrets.MUSICENHANCE_STORE_PASSWORD }}
+          MUSICENHANCE_KEY_PASSWORD: ${{ secrets.MUSICENHANCE_KEY_PASSWORD }}
+        run: |
+          python3 .github/scripts/release.py signing
+          # An unset key password uses the store password in app/build.gradle.kts.
+          if [ -z "$MUSICENHANCE_KEY_PASSWORD" ]; then unset MUSICENHANCE_KEY_PASSWORD; fi
+          unset MUSICENHANCE_KEYSTORE_BASE64
+          ./gradlew --no-daemon --no-configuration-cache :app:testDebugUnitTest :app:lintRelease :app:assembleRelease
+
+      - name: Verify APK and prepare release files
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          BUILD_TOOLS: ${{ steps.plan.outputs.build_tools }}
+        run: |
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify --verbose app/build/outputs/apk/release/app-release.apk
+          python3 .github/scripts/release.py package
+
+      - name: Save build artifacts
+        if: steps.plan.outputs.publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicEnhance-${{ steps.plan.outputs.version }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            build/github-release/dist/*
+            build/github-release/notes.md
+
+      - name: Upload assets and publish
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/release.py publish
+
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/musicenhance-release.jks"

@@ -27,7 +27,7 @@ internal object NativePlayerViews {
                     val viewLong = max(view.width, view.height)
                     val sourceSquare = sourceShort.toFloat() / sourceLong.coerceAtLeast(1)
                     val viewSquare = viewShort.toFloat() / viewLong.coerceAtLeast(1)
-                    if (sourceShort >= 400 && viewShort >= 180 && sourceSquare >= 0.86f && viewSquare >= 0.72f) {
+                    if (sourceShort >= 150 && viewShort >= 180 && sourceSquare >= 0.86f && viewSquare >= 0.72f) {
                         val score = sourceShort * 3 + viewShort
                         if (score > bestScore) {
                             best = bitmap

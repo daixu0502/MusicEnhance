@@ -41,6 +41,7 @@ internal object PlayerProcessBridge {
     const val COMMAND_PREVIOUS = "previous"
     const val COMMAND_NEXT = "next"
     const val COMMAND_SEEK = "seek"
+    const val COMMAND_SEEK_AND_PLAY = "seek_and_play"
     const val COMMAND_REPEAT = "repeat"
     const val COMMAND_FAVORITE = "favorite"
 

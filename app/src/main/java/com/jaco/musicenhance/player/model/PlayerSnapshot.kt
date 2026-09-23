@@ -13,6 +13,9 @@ internal data class PlayerSnapshot(
     val actions: Long,
     val customActions: List<String>,
 ) {
+    /** Metadata cache key, not a native song ID. Adapters must still verify native identity. */
+    val metadataKey: String get() = "$title\u0000$artist\u0000$album"
+
     companion object {
         val Empty = PlayerSnapshot(
             title = "打开音乐应用开始播放",
@@ -25,7 +28,6 @@ internal data class PlayerSnapshot(
             actions = 0,
             customActions = emptyList(),
         )
-
     }
 }
 

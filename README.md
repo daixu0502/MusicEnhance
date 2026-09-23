@@ -1,65 +1,194 @@
-# 音乐外屏增强
+# 音乐外屏增强 · MusicEnhance
 
-适用于小米 MIX Flip / MIX Flip 2 的音乐外屏播放器模块，使用现代 LSPosed API 102。
+为 **Xiaomi MIX Flip / MIX Flip 2** 打造的外屏音乐播放器增强模块，基于 **libxposed API 102**。
+
+在外屏使用 QQ 音乐时，提供全屏专辑背景、低频律动、滚动歌词和围绕摄像头布局的播放控件。设置界面采用 Miuix 风格。
+
+[下载安装](https://github.com/daixu0502/MusicEnhance/releases) · [反馈问题](https://github.com/daixu0502/MusicEnhance/issues) · [构建与发布](#本地构建) · [开发与扩展](#开发与扩展)
+
+## 支持范围
+
+| 项目 | 当前适配 |
+| --- | --- |
+| 设备 | Xiaomi MIX Flip（`ruyi`）、Xiaomi MIX Flip 2（`bixi`） |
+| 系统 | 小米 HyperOS，安装最低要求为 Android 15（API 35） |
+| 框架 | 支持现代 **libxposed API 102** 的 LSPosed 环境 |
+| 音乐应用 | **QQ 音乐 20.8.5.8**（`com.tencent.qqmusic`） |
+| 使用场景 | 外屏播放页；内屏保留 QQ 音乐原界面 |
+
+模块依赖 HyperOS 外屏接口和 QQ 音乐私有接口。系统或 QQ 音乐更新后可能需要重新适配；仅满足 Android 版本要求不代表所有设备都可使用。目前未适配网易云音乐或其他音乐播放器。
 
 ## 功能
 
-- 为 QQ 音乐启用小米小外屏兼容策略与合盖连续运行。
-- Miuix 风格设置页，可独立开关“Hook QQ 音乐”。
-- 仅在 MIX Flip 近方形外屏显示专用播放器，内屏保持 QQ 音乐原界面。
-- 从 QQ 音乐的系统 `MediaSession` 同步歌名、歌手、封面、播放状态和进度。
-- 支持播放/暂停、上一首、下一首和拖动进度。
-- 专辑封面全屏铺底：通过 QQ 音乐 20.8.5.8 的封面地址生成接口优先请求 1500×1500 图片，失败时尝试 1200×1200、800×800；按实际图片尺寸与原生播放器封面比较选取。后台下载并缓存，换歌时丢弃过期结果，不经过媒体通知的缩略图传输。原图缺失时保留原有封面。
-- 从屏幕中部向歌名所在边缘分三层逐渐增强模糊，高清源图不改变这一效果。
-- 从 QQ 音乐的 `AudioTrack` PCM 数据生成每 10ms 一帧的低频律动，驱动 25 条中心向两侧展开的频谱；颜色从专辑封面主色生成渐变。暂停后从当前高度在约 800ms 内平滑回落，不继续播放预缓冲动画。
-- 在 QQ 音乐界面进程与 `QQPlayerService` 进程之间同步歌曲信息、控制命令和频谱。
-- 播放页使用系统正反竖屏方向策略，并在启动前拦截 QQ 自带横屏播放器。摄像头位置优先从 `DisplayManagerGlobal.getDisplayInfo` 的实时缺口读取；反向首页进入播放器时，显示缺口缺失则使用窗口的有效摄像头缺口，最后才按旋转值定位，避免旧方向值导致对角错位。
-- 播放页强制使用完整外屏区域，并提供返回 QQ 音乐原界面的按钮。
-- 返回 QQ 音乐首页后恢复系统原生半屏布局；再次打开播放器时自动恢复全屏。
-- 循环按钮在后台直接调用 QQ 播放服务，依次切换顺序播放、列表循环、单曲循环和随机播放，不创建菜单。模式值以 QQ 音乐 20.8.5.8 为准。
-- 喜欢状态通过 QQ 的 `UserDataManager.isILike` 查询当前歌曲；收藏数据未初始化时显示读取中，点击仍由 QQ 原生收藏控件处理。
-- 返回键避开状态栏，正向在左上、反向在右上。
-- 反向时返回箭头同步旋转 180°。QQ 首页明确启用原生外屏小部件支持，防止播放器退出后小部件保留隐藏状态；仅在外屏首页移除多余导航栏背景，切回内屏恢复原设置。
-- 播放器图标统一采用 24dp 画布、1.8dp 圆头线条，保持一致视觉大小；触摸区域保留原尺寸。
-- 正反切换通过 HyperOS 系统窗口动画整页旋转 180°，约 620ms，采用先加速后减速的平滑曲线。只匹配 MIX Flip 的 QQ 播放器外屏正反切换，内外屏切换、其他应用与横屏旋转不修改。
-- 安装应用内提供模块开关和启用指引；播放器仅在 QQ 音乐外屏内使用。
-- 外屏播放器进入时隐藏系统栏，并在 QQ 原生“显示状态栏”方法执行前拦截其恢复请求，覆盖流量提示控制器的延迟恢复路径。没有状态栏出现后的重隐藏监听；首页、内屏及其他窗口仍执行原逻辑。边缘滑动仍可临时呼出系统栏。
+### 外屏播放器
 
-## 安装
+- **全屏封面**：专辑图铺满背景，从屏幕中部向歌曲信息区域逐渐增强模糊。
+- **摄像头避让**：黑色摄像头区域与控件根据外屏方向布局；正反切换使用整页 180° 旋转动画。
+- **低频律动**：以低音、鼓点等低频信号驱动摄像头之间的频谱，颜色取自封面主色；暂停后平滑回落。
+- **播放控制**：播放/暂停、上一首、下一首、拖动进度，以及当前歌曲的喜欢状态。
+- **直接切换循环模式**：顺序播放 → 列表循环 → 单曲循环 → 随机播放，无需弹出菜单。
+- **返回首页**：退出增强播放器后恢复 QQ 音乐首页的原生半屏布局和外屏小部件。
 
-1. 安装 `app/build/outputs/apk/debug/app-debug.apk`。
-2. 在支持 libxposed API 102 的 LSPosed 框架中启用模块。
-3. 保持固定作用域中的“系统框架”“QQ 音乐”和“系统界面（com.android.systemui）”启用；系统界面作用域用于整页旋转动画。
-4. 打开模块主程序，启用“Hook QQ 音乐”。
-5. 首次启用或更新模块后重启手机，再从外屏桌面启动 QQ 音乐。只切换模块内开关时，强制停止并重新打开 QQ 音乐即可。
+### 滚动歌词
 
-## 构建
+点击播放器中不属于按钮、进度条等控件的空白区域，即可切换到歌词页。
+
+- 专辑背景切换为更深的整屏模糊，歌曲信息移到返回键旁边。
+- 黑色侧栏平滑延伸，容纳喜欢、播放/暂停和专辑缩略图。
+- 歌词自动跟随播放，通常将上一句、当前句放在前两行。
+- 当前句保持清晰，距离当前句越远，上下两侧的歌词模糊越深。
+- 手动滚动时平滑取消模糊，并显示中央选中句的开始时间；停止操作约 4 秒后恢复跟随。
+- 点击歌词文字可跳转到该句并播放；点击空白区域或专辑缩略图返回封面页。
+- 没有可用逐句歌词时显示空态，不生成示例歌词。
+
+### 封面加载与预缓存
+
+优先获取高清专辑图；大图不可用时尝试较小尺寸，专辑图不可用时再尝试歌手图，并跳过已识别的 QQ 通用占位封面。
+
+首次进入播放器及切换歌曲后，会根据 QQ 的**实际播放队列，预缓存前 3 首和后 3 首**的封面：
+
+- 从最近的上一首、下一首开始加载，切歌后更新缓存范围。
+- 重叠歌曲复用已有缓存，短列表自动去重；列表循环可跨越首尾，随机播放使用 QQ 已生成的随机队列。
+- 当前歌曲与预加载使用独立后台任务；切歌或退出后取消过期任务。
+- 文件缓存最多 **64 MiB**，图片内存缓存最多 **24 MiB**，不长期保留 6 张解码大图。
+- 切歌等待新图时，背景最多保留上一帧约 1.5 秒，减少灰色空白过渡。
+
+封面预加载会使用网络。文件保存在 **QQ 音乐的应用缓存目录**；被系统或用户清理后，会在后续使用时重新加载。歌曲缺图、网络速度或连续快速切歌仍可能造成等待。
+
+## 安装与启用
+
+1. 从 [Releases](https://github.com/daixu0502/MusicEnhance/releases) 下载并安装 APK；希望尝试测试版本时，可选择标记为 **Pre-release** 的版本。
+2. 在 LSPosed 中启用「音乐外屏增强」，确认以下作用域：
+
+   | 作用域 | 用途 |
+   | --- | --- |
+   | 系统框架（`system`） | HyperOS 外屏兼容与布局策略 |
+   | QQ 音乐（`com.tencent.qqmusic`） | 播放器、歌词、封面和播放控制 |
+   | 系统界面（`com.android.systemui`） | 正反方向的系统旋转动画 |
+
+3. 打开模块设置，确认激活状态，并打开「Hook QQ 音乐」。
+4. **首次启用或更新模块后，重启手机。**
+5. 从外屏打开 QQ 音乐，进入播放页使用增强界面。
+
+仅切换模块内的 Hook 开关时，强制停止并重新打开 QQ 音乐即可。模块设置页用于配置，不提供独立播放器或预览入口。
+
+## 常见问题
+
+### 启用后界面没有变化
+
+检查设备、QQ 音乐版本和 API 102 框架是否符合上述要求，确认模块作用域和 Hook 开关已启用。首次安装后需重启手机，并在**外屏播放页**查看；内屏和 QQ 音乐首页不会显示增强播放器。
+
+### 为什么有些歌曲显示歌手图，或封面仍需等待？
+
+部分歌曲没有有效专辑图，模块会使用歌手图兜底。预缓存仅覆盖当前队列前后各 3 首，无法覆盖尚未生成的队列、远距离跳转或未完成下载的图片。
+
+### 为什么喜欢按钮暂时不可用？
+
+模块需要先读取 QQ 音乐当前歌曲的收藏状态；数据尚未就绪时会等待，避免把未知状态误显示成「未喜欢」。收藏操作仍由 QQ 音乐处理。
+
+### 安装时提示签名不一致
+
+新旧 APK 需要使用相同证书才能覆盖安装。自行编译的 Debug 包通常与 Release 包签名不同；更换签名前请记录模块设置，必要时卸载旧模块，再安装并重新启用。
+
+### 如何反馈问题？
+
+请在 [Issues](https://github.com/daixu0502/MusicEnhance/issues) 提供设备型号、Android/HyperOS 版本、QQ 音乐版本、模块版本，以及复现步骤。摄像头错位问题请注明进入播放器前后的屏幕方向、是否经历内外屏切换，并附截图或录像。
+
+可同时附上复现后的 LSPosed 日志，模块日志标签为 `MusicEnhance`。封面或歌词问题请补充歌曲名、歌手及具体版本（例如现场版）。分享日志前请检查其中是否包含个人信息。
+
+## 本地构建
+
+需要 **JDK 17** 和 **Android SDK Platform 37**。使用项目自带的 Gradle Wrapper，无需另外安装 Gradle；首次构建需要联网下载依赖。
+
+将项目导入 Android Studio 并配置 SDK 路径，或通过本地 `local.properties` 设置 `sdk.dir`。当前构建配置可查看 [app/build.gradle.kts](app/build.gradle.kts) 和 [版本目录](gradle/libs.versions.toml)。
+
+以下命令在项目根目录运行，以 Windows PowerShell 为例：
 
 ```powershell
+# 编译 Debug
 .\gradlew.bat :app:assembleDebug
+
+# 单元测试与 Release 静态检查
+.\gradlew.bat --no-configuration-cache :app:testDebugUnitTest :app:lintRelease
 ```
 
-### 签名 release
+macOS / Linux 使用 `./gradlew` 替换 `.\gradlew.bat`。
 
-正式版使用 AGP 9.3 的 `optimization.enable = true`，开启 R8 压缩、混淆与资源裁剪。
-`app/src/release/keepRules/xposed.keep` 保留 LSPosed 从资源文件加载的模块入口。
-证书通过以下进程环境变量提供，密码不写入项目：
+### 签名 Release
 
-- `MUSICENHANCE_KEYSTORE`：证书绝对路径。
-- `MUSICENHANCE_KEY_ALIAS`：密钥别名。
-- `MUSICENHANCE_STORE_PASSWORD`：证书库密码。
-- `MUSICENHANCE_KEY_PASSWORD`：密钥密码；省略时使用证书库密码。
+在构建进程中设置以下环境变量，证书与密码不要提交到仓库：
+
+| 环境变量 | 内容 |
+| --- | --- |
+| `MUSICENHANCE_KEYSTORE` | 签名证书的绝对路径 |
+| `MUSICENHANCE_KEY_ALIAS` | 密钥别名 |
+| `MUSICENHANCE_STORE_PASSWORD` | 证书库密码 |
+| `MUSICENHANCE_KEY_PASSWORD` | 密钥密码；省略时使用证书库密码 |
 
 ```powershell
 .\gradlew.bat --no-configuration-cache --no-daemon :app:assembleRelease
 ```
 
-未配置完整签名环境变量时输出未签名 release。正式签名与旧 debug 签名不同，无法直接覆盖旧 debug 安装；请先备份模块设置，再手动卸载旧模块并安装正式版、重新启用作用域。构建不会自动卸载手机应用。
+Release 已启用 **R8 代码压缩、混淆和资源裁剪**，并保留 LSPosed 模块入口。未配置完整签名环境变量时，生成未签名包。
 
-## 兼容设计
+| 构建方式 | 默认 APK 路径 |
+| --- | --- |
+| Debug | `app/build/outputs/apk/debug/app-debug.apk` |
+| 已签名 Release | `app/build/outputs/apk/release/app-release.apk` |
+| 未签名 Release | `app/build/outputs/apk/release/app-release-unsigned.apk` |
 
-当前适配使用小米 HyperOS 中的 `ApplicationCompatManager` 和
-`InterceptActivityController` 外屏策略入口。各入口独立安装；系统版本缺少某个入口时，
-其余功能仍会继续加载，错误会写入 LSPosed 日志，标签为 `MusicEnhance`。
+通过 Android Studio 的「Generate Signed Bundle / APK」生成时，输出位置以向导选择的目录为准，也可能位于 `app/release/`。
 
-扩展其他播放器的具体步骤和约束见 [代码结构与接入指南](docs/architecture.md)。当前实际适配仍只有 QQ 音乐，注册新应用后还需实现其原生控制接口并验证目标版本。
+### GitHub 自动发布
+
+仓库已提供 [Release 工作流](.github/workflows/release.yml)，支持推送到 `main`、推送匹配的 `v*` 标签或在 Actions 手动运行。
+
+| 应用版本示例 | 发布类型 |
+| --- | --- |
+| `2.1`、`2.1.1` | 正式 Release |
+| `2.1-beta`、`2.1-beta.1` | Pre-release |
+
+- 版本从 Gradle 配置读取；发布新版本时同时更新 `versionName` 并递增 `versionCode`。
+- 正式版更新说明从上一个正式版生成，预发布版从上一个预发布版生成；首次发布该类型时使用完整提交历史。
+- 同一版本已公开发布时跳过，不覆盖已有附件。
+- 测试、静态检查、构建及签名验证通过后，上传 APK 和 SHA-256 校验文件。
+
+首次使用时，在仓库 **Settings → Secrets and variables → Actions** 配置：
+
+| Repository Secret | 内容 |
+| --- | --- |
+| `MUSICENHANCE_KEYSTORE_BASE64` | 签名证书文件的 Base64 文本 |
+| `MUSICENHANCE_KEY_ALIAS` | 密钥别名 |
+| `MUSICENHANCE_STORE_PASSWORD` | 证书库密码 |
+| `MUSICENHANCE_KEY_PASSWORD` | 密钥密码；与证书库密码相同时可省略 |
+
+例如，在本机 PowerShell 中将证书编码并复制到剪贴板，再粘贴到对应 Secret：
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\Keys\musicenhance.jks')) | Set-Clipboard
+```
+
+Base64 内容仍属于私密证书信息，不要提交到仓库。请使用与现有安装包一致的证书。
+
+工作流使用 GitHub 提供的 `GITHUB_TOKEN` 发布，需允许 `contents: write`。推送标签时，标签必须与源码版本一致，例如 `2.1` 对应 `v2.1`；正常推送 `main` 无需手动建标签。当前版本规则支持数字正式版和 beta，不接受 alpha、rc 等其他后缀。
+
+可在 **Actions → Build and publish release** 查看进度。附件上传完整后才公开发布；失败时可对同一提交重新运行任务。Actions 构建产物保留 14 天，Releases 附件不受该期限影响。
+
+## 开发与扩展
+
+播放器界面通过统一的 `PlayerController` 获取状态和执行操作；歌词、封面分别通过 `LyricsProvider`、`ArtworkProvider` 接入。QQ 私有接口集中在 `adapter/qq`，通用界面、缓存和歌词交互无需直接依赖 QQ 类。
+
+后续接入其他播放器，需要补充应用识别、原生控制和数据接口，并进行对应版本的真机验证；添加包名或作用域本身不会完成适配。
+
+| 源码位置 | 职责 |
+| --- | --- |
+| [adapter](app/src/main/java/com/jaco/musicenhance/adapter) | 应用识别、控制器注册和原生接口适配 |
+| [player/artwork](app/src/main/java/com/jaco/musicenhance/player/artwork) | 封面提供器、下载缓存、队列窗口和背景过渡 |
+| [player/lyrics](app/src/main/java/com/jaco/musicenhance/player/lyrics) | 歌词提供器和交互状态 |
+| [player/ui](app/src/main/java/com/jaco/musicenhance/player/ui) | 外屏布局、歌词视图和播放控件 |
+| [device](app/src/main/java/com/jaco/musicenhance/device) | 外屏检测、摄像头定位与设备布局 |
+| [hook](app/src/main/java/com/jaco/musicenhance/hook) | 模块入口及系统、宿主应用钩子 |
+
+接入新播放器时，需要实现应用 Profile 并注册控制器工厂，补充原生数据接口，同时更新模块作用域和应用查询配置。缺少的可选能力应返回未知或不支持状态，不要套用 QQ 的私有接口。
+
+单元测试和构建检查不能替代真机验证，特别是 HyperOS 外屏切换、摄像头定位及 QQ 私有接口行为。
