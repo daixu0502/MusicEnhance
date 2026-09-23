@@ -1,6 +1,6 @@
-# QQ 音乐外屏增强
+# 音乐外屏增强
 
-适用于小米 MIX Flip / MIX Flip 2 的 QQ 音乐外屏播放器模块，使用现代 LSPosed API 102。
+适用于小米 MIX Flip / MIX Flip 2 的音乐外屏播放器模块，使用现代 LSPosed API 102。
 
 ## 功能
 
