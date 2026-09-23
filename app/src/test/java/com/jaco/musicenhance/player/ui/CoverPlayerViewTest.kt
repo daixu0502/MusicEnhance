@@ -29,6 +29,35 @@ import org.robolectric.util.ReflectionHelpers
 @Config(sdk = [35], manifest = Config.NONE)
 class CoverPlayerViewTest {
     @Test
+    @Config(sdk = [34, 35])
+    fun firstTraversalLaysOutControlsWithoutWaitingForPostedMessages() {
+        val activityController = Robolectric.buildActivity(Activity::class.java).create()
+        try {
+            val activity = activityController.get()
+            val player = CoverPlayerView(activity, activity.window, EmptyPlayerController) {}
+            fun layout(width: Int, height: Int) {
+                player.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
+                player.layout(0, 0, width, height)
+            }
+            layout(1208, 1392)
+            val spectrum = (0 until player.childCount).map(player::getChildAt)
+                .filterIsInstance<CameraSpectrumView>().single()
+            assertEquals((1208 * (341f / 1208f)).toInt(), spectrum.width)
+            assertEquals((1392 * (702f / 1392f)).toInt(), spectrum.height)
+            val back = (0 until player.childCount).map(player::getChildAt)
+                .single { it.contentDescription?.startsWith("返回 ") == true }
+            assertTrue(back.width > 0 && back.height > 0)
+            assertEquals((1208 * .025f).toInt(), back.top)
+            layout(1000, 1200)
+            assertEquals((1000 * (341f / 1208f)).toInt(), spectrum.width)
+            assertEquals((1200 * (702f / 1392f)).toInt(), spectrum.height)
+        } finally {
+            activityController.destroy()
+        }
+    }
+
+    @Test
     fun keepScreenOnFollowsTheSettingFocusAndOverlayLifetime() {
         val activityController = Robolectric.buildActivity(Activity::class.java).setup().visible()
         try {

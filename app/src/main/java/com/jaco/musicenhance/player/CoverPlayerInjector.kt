@@ -20,12 +20,14 @@ import com.jaco.musicenhance.hook.MusicEnhanceModule
 import com.jaco.musicenhance.hook.hookEnabled
 import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.hook.moduleInfo
+import com.jaco.musicenhance.hook.safeHook
 import com.jaco.musicenhance.player.ui.CoverPlayerView
 import java.util.WeakHashMap
 
 internal object CoverPlayerInjector {
     private val overlays = WeakHashMap<Activity, CoverPlayerView>()
-    private val layoutListeners = WeakHashMap<Activity, View.OnLayoutChangeListener>()
+    private val overlayLayers = WeakHashMap<Activity, PlayerOverlayLayer>()
+    private val windowObservers = WeakHashMap<Activity, PlayerWindowObserver>()
     private val suppressed = WeakHashMap<Activity, Boolean>()
     private val originalOrientations = WeakHashMap<Activity, Int>()
     private val backCallbacks = WeakHashMap<Activity, OnBackInvokedCallback>()
@@ -52,11 +54,31 @@ internal object CoverPlayerInjector {
         }
     }
 
-    fun update(activity: Activity) {
+    fun onCreated(activity: Activity) {
+        if (isPlayerActivityName(activity.javaClass.name)) observeWindow(activity)
+    }
+
+    fun onResumed(activity: Activity) = observeWindow(activity)
+
+    private fun observeWindow(activity: Activity) {
+        if (activity.isFinishing || activity.isDestroyed || suppressed[activity] == true) return
+        if (MusicAppRegistry.find(activity.packageName) == null) return
+        val decor = activity.window.decorView
+        windowObservers.getOrPut(activity) {
+            PlayerWindowObserver(decor) {
+                safeHook("player window update") { update(activity) }
+            }
+        }.start()
+    }
+
+    fun onPaused(activity: Activity) {
+        windowObservers[activity]?.stop()
+    }
+
+    private fun update(activity: Activity) {
         if (activity.isFinishing || activity.isDestroyed) return
         val profile = MusicAppRegistry.find(activity.packageName) ?: return
         val decor = activity.window.decorView as? ViewGroup ?: return
-        observeSizeChanges(activity, decor)
         if (suppressed[activity] == true) return
         if (!isPlayerActivityName(activity.javaClass.name)) {
             removeOverlay(activity, decor)
@@ -79,6 +101,7 @@ internal object CoverPlayerInjector {
             return
         }
         overlays[activity]?.takeIf { it.parent != null }?.let { player ->
+            overlayLayers[activity]?.refresh()
             player.requestApplyInsets()
             player.refreshDisplayLayout()
             return
@@ -108,6 +131,9 @@ internal object CoverPlayerInjector {
             ),
         )
         overlays[activity] = player
+        overlayLayers[activity] = PlayerOverlayLayer(decor, player) {
+            moduleInfo("Restored player above late host content; activity=${activity.javaClass.name}")
+        }.also { it.start() }
         registerBackCallback(activity)
         player.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(view: View) = Unit
@@ -129,6 +155,7 @@ internal object CoverPlayerInjector {
         }
         playerActivities.forEach { activity ->
             suppressed[activity] = true
+            onPaused(activity)
             overlays[activity]?.prepareForDismissal()
             unregisterBackCallback(activity)
             module.log(
@@ -178,6 +205,7 @@ internal object CoverPlayerInjector {
 
     private fun removeOverlay(activity: Activity, decor: ViewGroup) {
         unregisterBackCallback(activity)
+        overlayLayers.remove(activity)?.stop()
         overlays.remove(activity)?.let(decor::removeView)
         originalOrientations.remove(activity)?.let { original ->
             if (!activity.isFinishing && !activity.isDestroyed) activity.requestedOrientation = original
@@ -186,22 +214,13 @@ internal object CoverPlayerInjector {
 
     fun onDestroyed(activity: Activity) {
         unregisterBackCallback(activity)
+        overlayLayers.remove(activity)?.stop()
         val decor = activity.window.peekDecorView() as? ViewGroup
-        layoutListeners.remove(activity)?.let { decor?.removeOnLayoutChangeListener(it) }
+        windowObservers.remove(activity)?.stop()
         overlays.remove(activity)?.let { decor?.removeView(it) }
         originalOrientations.remove(activity)
         suppressed.remove(activity)
         CoverHomeAppearance.onDestroyed(activity)
     }
 
-    private fun observeSizeChanges(activity: Activity, decor: ViewGroup) {
-        if (layoutListeners.containsKey(activity)) return
-        val listener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-            if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) {
-                decor.post { update(activity) }
-            }
-        }
-        layoutListeners[activity] = listener
-        decor.addOnLayoutChangeListener(listener)
-    }
 }

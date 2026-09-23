@@ -1,7 +1,8 @@
 *.iml
 .gradle
 /local.properties
-/.idea/
+/.idea
+/.kotlin
 .DS_Store
 /build
 /captures
@@ -12,4 +13,4 @@ keystore.properties
 *.jks
 *.keystore
 
-/.kotlin/
+

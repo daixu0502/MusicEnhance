@@ -218,17 +218,26 @@ internal class CoverPlayerView(
     }
 
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
-        reportedCutouts = insets.displayCutout?.boundingRects?.map(::Rect).orEmpty()
+        val cutouts = insets.displayCutout?.boundingRects?.map(::Rect).orEmpty()
+        if (cutouts != reportedCutouts) {
+            reportedCutouts = cutouts
+            requestLayout()
+        }
         moduleInfo(
             "Player insets: view=${width}x$height, rotation=${display?.rotation}, cutouts=${reportedCutouts.joinToString()}",
         )
-        post(::layoutForDisplay)
         return super.onApplyWindowInsets(insets)
     }
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        post(::layoutForDisplay)
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        // The full-screen host supplies exact bounds. Prepare child frames in this traversal,
+        // before FrameLayout measures them, rather than posting work after the first draw.
+        if (MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.EXACTLY &&
+            MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.EXACTLY
+        ) {
+            layoutForDisplay(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.getSize(heightMeasureSpec))
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 
     private fun configureInfo() {
@@ -342,7 +351,7 @@ internal class CoverPlayerView(
         }
     }
 
-    private fun layoutForDisplay() {
+    private fun layoutForDisplay(width: Int = this.width, height: Int = this.height) {
         if (width <= 0 || height <= 0) return
         val portrait = height > width * 1.03f
         val physical = CoverDisplayGeometry.read(display?.displayId ?: 0)?.takeIf {
@@ -441,11 +450,11 @@ internal class CoverPlayerView(
         lyricsHeaderFrame.set(headingLeft, headingTop, headingRight, headingTop + headingHeight)
         setFrame(lyricsView, textLeft, lyricsHeaderFrame.bottom + dp(6), textRight - textLeft,
             height - lyricsHeaderFrame.bottom - dp(18))
-        applyModeLayout()
+        applyModeLayout(height)
     }
 
     /** Only presentation changes here: never resize the calibrated camera/spectrum view. */
-    private fun applyModeLayout() {
+    private fun applyModeLayout(height: Int = this.height) {
         val transitionProgress = lyricsTransitionProgress
         blurredArtworkView.fullBlurProgress = transitionProgress
         lyricsShade.alpha = transitionProgress

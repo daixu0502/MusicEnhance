@@ -36,6 +36,18 @@ internal object MusicAppHooks {
         installAudioSpectrumHooks()
         installHorizontalPlayerLaunchBlock()
         installPlayerOrientationHooks()
+        safeHook("activity pause cleanup") {
+            module.installHook(
+                Instrumentation::class.java.declaredMethod("callActivityOnPause", Activity::class.java),
+                "musicenhance.activity.pause",
+                Hooker { chain ->
+                    safeHook("player window pause") {
+                        (chain.args.firstOrNull() as? Activity)?.let(CoverPlayerInjector::onPaused)
+                    }
+                    chain.proceed()
+                },
+            )
+        }
         safeHook("activity destroy cleanup") {
             module.installHook(
                 Instrumentation::class.java.declaredMethod("callActivityOnDestroy", Activity::class.java),
@@ -87,7 +99,7 @@ internal object MusicAppHooks {
                         MusicEnhanceModule.TAG,
                         "Activity resumed; process=$processName, activity=${activity.javaClass.name}, displayId=$displayId",
                     )
-                    activity.window.decorView.post { CoverPlayerInjector.update(activity) }
+                    CoverPlayerInjector.onResumed(activity)
                 },
             )
         }
@@ -214,16 +226,8 @@ internal object MusicAppHooks {
                                 CoverPlayerInjector.prepareOrientation(activity)
                             }
                             val result = chain.proceed()
-                            if (
-                                activity != null &&
-                                isPlayerActivityName(activity.javaClass.name) &&
-                                CoverScreenDetector.isCoverScreen(activity)
-                            ) {
-                                if (isHorizontalPlayerActivityName(activity.javaClass.name)) {
-                                    CoverPlayerInjector.suppressHorizontalPlayer(activity)
-                                } else {
-                                    CoverPlayerInjector.update(activity)
-                                }
+                            safeHook("player window created") {
+                                activity?.let(CoverPlayerInjector::onCreated)
                             }
                             result
                         },

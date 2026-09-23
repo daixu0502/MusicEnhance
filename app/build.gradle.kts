@@ -11,10 +11,10 @@ android {
 
     defaultConfig {
         applicationId = "com.jaco.musicenhance"
-        minSdk = 35
+        minSdk = 34
         targetSdk = 37
-        versionCode = 42
-        versionName = "2.1.0"
+        versionCode = 43
+        versionName = "2.1.5"
     }
 
     val releaseKeystore = providers.environmentVariable("MUSICENHANCE_KEYSTORE").orNull
