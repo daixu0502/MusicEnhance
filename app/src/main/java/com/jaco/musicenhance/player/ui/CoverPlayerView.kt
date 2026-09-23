@@ -15,6 +15,7 @@ import android.view.Gravity
 import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import android.view.WindowInsets
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -24,6 +25,7 @@ import com.jaco.musicenhance.device.CoverCameraPlacement
 import com.jaco.musicenhance.device.CoverDisplayGeometry
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.player.PlayerController
+import com.jaco.musicenhance.player.PlayerSystemBars
 import com.jaco.musicenhance.player.model.PlayerControlState
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 import com.jaco.musicenhance.player.model.RepeatMode
@@ -37,9 +39,11 @@ import kotlin.math.min
 @SuppressLint("SetTextI18n", "ViewConstructor")
 internal class CoverPlayerView(
     context: Context,
+    window: Window,
     private val controller: PlayerController,
     private val onDismiss: () -> Unit,
 ) : FrameLayout(context) {
+    private val systemBars = PlayerSystemBars(window)
     private val handler = Handler(Looper.getMainLooper())
     private var isSeeking = false
     private var lastArtwork: Bitmap? = null
@@ -130,12 +134,14 @@ internal class CoverPlayerView(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        systemBars.start()
         controller.addListener(listener)
         handler.post(ticker)
         requestApplyInsets()
     }
 
     override fun onDetachedFromWindow() {
+        systemBars.stop()
         handler.removeCallbacks(ticker)
         controller.removeListener(listener)
         super.onDetachedFromWindow()
@@ -305,6 +311,11 @@ internal class CoverPlayerView(
     fun refreshDisplayLayout() {
         lastDisplayRotation = display?.rotation ?: Surface.ROTATION_0
         layoutForDisplay()
+    }
+
+    fun releaseSystemBars() {
+        // This Activity is finishing; showing bars on its outgoing surface causes a flash.
+        systemBars.stop(restoreVisibility = false)
     }
 
     private fun render(snapshot: PlayerSnapshot) {

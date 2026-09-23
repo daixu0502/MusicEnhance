@@ -7,7 +7,6 @@ import android.os.Looper
 import android.util.Log
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowInsets
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import com.jaco.musicenhance.adapter.MusicAppAdapters
@@ -30,6 +29,16 @@ internal object CoverPlayerInjector {
     private val originalOrientations = WeakHashMap<Activity, Int>()
     private val backCallbacks = WeakHashMap<Activity, OnBackInvokedCallback>()
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** Native UI policies yield only while this Activity is actually hosting our cover player. */
+    fun ownsSystemBars(activity: Activity?): Boolean {
+        activity ?: return false
+        if (activity.isFinishing || activity.isDestroyed || suppressed[activity] == true) return false
+        val player = overlays[activity] ?: return false
+        if (!player.isAttachedToWindow || !player.isShown) return false
+        // A fold transition may change the physical panel before the overlay has been removed.
+        return CoverScreenDetector.isCoverScreen(activity)
+    }
 
 
     fun prepareOrientation(activity: Activity) {
@@ -79,6 +88,7 @@ internal object CoverPlayerInjector {
         activity.window.setDecorFitsSystemWindows(false)
         val player = CoverPlayerView(
             activity,
+            window = activity.window,
             controller = MusicAppAdapters.create(profile, activity, decor),
             onDismiss = ::dismissToMusicHome,
         ).apply {
@@ -106,9 +116,6 @@ internal object CoverPlayerInjector {
             MusicEnhanceModule.TAG,
             "Outer-screen player attached; activity=${activity.javaClass.name}",
         )
-        activity.window.insetsController?.hide(
-            WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars(),
-        )
     }
 
     private fun dismissToMusicHome() {
@@ -117,6 +124,7 @@ internal object CoverPlayerInjector {
         }
         playerActivities.forEach { activity ->
             suppressed[activity] = true
+            overlays[activity]?.releaseSystemBars()
             unregisterBackCallback(activity)
             module.log(
                 Log.INFO,
