@@ -49,11 +49,13 @@ internal class CoverPlayerView(
     context: Context,
     window: Window,
     private val controller: PlayerController,
+    private val keepScreenOnRequested: () -> Boolean = { false },
     private val onDismiss: () -> Unit,
 ) : FrameLayout(context) {
     private val systemBars = PlayerSystemBars(window)
     private val handler = Handler(Looper.getMainLooper())
     private var isSeeking = false
+    private var isClosing = false
     private val artworkState = PlayerArtworkState()
     private val artworkTransition = ArtworkTransition()
     private var thumbnailArtwork: Bitmap? = null
@@ -133,6 +135,7 @@ internal class CoverPlayerView(
             }
             if (now - lastControlPollAt >= CONTROL_POLL_MS) {
                 lastControlPollAt = now
+                refreshKeepScreenOn()
                 applyControlState(controller.controlState())
             }
             handler.postDelayed(this, UI_TICK_MS)
@@ -179,6 +182,8 @@ internal class CoverPlayerView(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        isClosing = false
+        refreshKeepScreenOn()
         systemBars.start()
         controller.addListener(listener)
         handler.post(ticker)
@@ -186,6 +191,7 @@ internal class CoverPlayerView(
     }
 
     override fun onDetachedFromWindow() {
+        keepScreenOn = false
         systemBars.stop()
         handler.removeCallbacks(ticker)
         controller.removeListener(listener)
@@ -193,6 +199,24 @@ internal class CoverPlayerView(
         modeTransitionAnimator?.cancel()
         super.onDetachedFromWindow()
     }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus) refreshKeepScreenOn() else keepScreenOn = false
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        if (visibility == VISIBLE) refreshKeepScreenOn() else keepScreenOn = false
+    }
+
+    private fun refreshKeepScreenOn() {
+        // View-owned flags leave the host's existing window flags untouched and stop holding
+        // the display as soon as this overlay is removed/hidden. Never dismiss the keyguard.
+        keepScreenOn = isAttachedToWindow && !isClosing && isShown &&
+            windowVisibility == VISIBLE && hasWindowFocus() && keepScreenOnRequested()
+    }
+
     override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
         reportedCutouts = insets.displayCutout?.boundingRects?.map(::Rect).orEmpty()
         moduleInfo(
@@ -479,7 +503,10 @@ internal class CoverPlayerView(
         layoutForDisplay()
     }
 
-    fun releaseSystemBars() {
+    /** Release foreground-only policies before the outgoing Activity's surface is detached. */
+    fun prepareForDismissal() {
+        isClosing = true
+        keepScreenOn = false
         // This Activity is finishing; showing bars on its outgoing surface causes a flash.
         systemBars.stop(restoreVisibility = false)
     }

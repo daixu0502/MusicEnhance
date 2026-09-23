@@ -9,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
+import com.jaco.musicenhance.Prefs
 import com.jaco.musicenhance.adapter.MusicAppAdapters
 import com.jaco.musicenhance.adapter.MusicAppRegistry
 import com.jaco.musicenhance.adapter.isHorizontalPlayerActivityName
@@ -39,7 +40,6 @@ internal object CoverPlayerInjector {
         // A fold transition may change the physical panel before the overlay has been removed.
         return CoverScreenDetector.isCoverScreen(activity)
     }
-
 
     fun prepareOrientation(activity: Activity) {
         originalOrientations.putIfAbsent(activity, activity.requestedOrientation)
@@ -91,6 +91,11 @@ internal object CoverPlayerInjector {
             window = activity.window,
             controller = MusicAppAdapters.create(profile, activity, decor),
             onDismiss = ::dismissToMusicHome,
+            keepScreenOnRequested = {
+                CoverScreenDetector.isCoverScreen(activity) && runCatching {
+                    module.getRemotePreferences(Prefs.NAME).getBoolean(Prefs.KEEP_COVER_SCREEN_ON, false)
+                }.getOrDefault(false)
+            },
         ).apply {
             tag = PLAYER_OVERLAY_TAG
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
@@ -124,7 +129,7 @@ internal object CoverPlayerInjector {
         }
         playerActivities.forEach { activity ->
             suppressed[activity] = true
-            overlays[activity]?.releaseSystemBars()
+            overlays[activity]?.prepareForDismissal()
             unregisterBackCallback(activity)
             module.log(
                 Log.INFO,

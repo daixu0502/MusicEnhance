@@ -144,6 +144,8 @@ private fun MainScreen(
                         MusicAppPreferences(profile)
                     }
 
+                    PlayerPreferences()
+
                     Card(modifier = Modifier.fillMaxWidth()) {
                         ArrowPreference(
                             title = "LSPosed 作用域",
@@ -180,6 +182,28 @@ private fun MusicAppPreferences(profile: MusicAppProfile) {
                 val remotePrefs = prefs ?: return@SwitchPreference
                 enabled = checked
                 remotePrefs.edit { putBoolean(profile.enabledPreference, checked) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun PlayerPreferences() {
+    val prefs = XposedServiceState.prefs
+    val connected = XposedServiceState.isConnected
+    var keepScreenOn by remember(prefs) {
+        mutableStateOf(prefs?.getBoolean(Prefs.KEEP_COVER_SCREEN_ON, false) ?: false)
+    }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        SwitchPreference(
+            title = "播放器外屏常亮",
+            summary = if (connected) "进入外屏播放器后防止自动息屏锁屏，退出后恢复；仍可手动锁屏"
+                else "请先在 LSPosed 中启用模块",
+            checked = keepScreenOn,
+            onCheckedChange = { checked ->
+                val remotePrefs = prefs ?: return@SwitchPreference
+                keepScreenOn = checked
+                remotePrefs.edit { putBoolean(Prefs.KEEP_COVER_SCREEN_ON, checked) }
             },
         )
     }

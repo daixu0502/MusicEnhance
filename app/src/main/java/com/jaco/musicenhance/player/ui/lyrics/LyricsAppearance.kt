@@ -6,12 +6,13 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal object LyricsAppearance {
-    const val FOLLOW_DURATION_MS = 460L
     const val BLUR_DURATION_MS = 320L
     const val TEXT_FADE_DURATION_MS = 220L
     const val MAX_BLUR_DISTANCE = 4
     const val BLUR_RADIUS_DP_PER_LINE = 1.25f
     const val BLUR_STEPS_PER_LINE = 20
+    // Space for glyph ascenders/descenders and the maximum 5 dp blur halo.
+    const val BLUR_PADDING_DP = 12f
 
     fun distance(lineIndex: Int, activeLineIndex: Int) =
         abs(lineIndex - activeLineIndex.coerceAtLeast(0)).coerceAtMost(MAX_BLUR_DISTANCE)

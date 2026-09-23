@@ -27,6 +27,8 @@ internal class LyricRowView(
         text = line.text
         typeface = Typeface.DEFAULT_BOLD
         includeFontPadding = false
+        val blurPadding = dp(LyricsAppearance.BLUR_PADDING_DP).toInt()
+        setPadding(0, blurPadding, 0, blurPadding)
         setTextColor(Color.WHITE)
         setLineSpacing(dp(3f), 1f)
         setTextSize(TypedValue.COMPLEX_UNIT_PX, textSizePx)
@@ -47,12 +49,18 @@ internal class LyricRowView(
     private var targetTextAlpha = Float.NaN
     private var timeVisible = false
 
-    val singleLineHeight: Int get() = lyricLabel.lineHeight + paddingTop + paddingBottom
+    val singleLineHeight: Int get() = lyricLabel.lineHeight + lyricLabel.paddingTop +
+        lyricLabel.paddingBottom + paddingTop + paddingBottom
 
     init {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(3f).toInt(), dp(18f).toInt(), dp(3f).toInt(), dp(18f).toInt())
+        clipChildren = false
+        clipToPadding = false
+        // Move vertical space inside the text's render layer so blur cannot crop the glyphs.
+        // Keep the same total row spacing and the existing text-only touch bounds.
+        val rowPadding = dp(18f).toInt() - lyricLabel.paddingTop
+        setPadding(dp(3f).toInt(), rowPadding, dp(3f).toInt(), rowPadding)
         addView(lyricLabel, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
         addView(timeLabel, LayoutParams(dp(38f).toInt(), LayoutParams.WRAP_CONTENT))
         isFocusable = true
