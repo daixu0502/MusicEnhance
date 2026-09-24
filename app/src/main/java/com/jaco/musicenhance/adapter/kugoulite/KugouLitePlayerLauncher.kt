@@ -20,7 +20,7 @@ internal class KugouLitePlayerLauncher(
         if (pendingSinceMs?.let { nowMs - it < LAUNCH_TIMEOUT_MS } == true) return true
         pendingSinceMs = nowMs
         try {
-            startActivity(source, Intent().setClassName(KugouLiteMusicProfile.packageName, ACTIVITY_NAME)
+            startActivity(source, Intent().setClassName(KugouLitePlayerProfile.packageName, ACTIVITY_NAME)
                 .putExtra(EXTRA_COVER_PLAYER, true))
         } catch (error: Exception) {
             pendingSinceMs = null
@@ -45,7 +45,7 @@ internal class KugouLitePlayerLauncher(
         private const val LAUNCH_TIMEOUT_MS = 2_000L
 
         fun isModuleLaunch(activity: Activity): Boolean =
-            activity.intent?.component?.packageName == KugouLiteMusicProfile.packageName &&
+            activity.intent?.component?.packageName == KugouLitePlayerProfile.packageName &&
                 activity.intent?.component?.className == ACTIVITY_NAME &&
                 activity.intent?.getBooleanExtra(EXTRA_COVER_PLAYER, false) == true
     }

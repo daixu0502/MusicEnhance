@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit
 
 /** Coalesces rapid clicks and serializes host IPC; no service calls occur on the rendering thread. */
 internal class NativeRepeatControl(
-    private val createApi: () -> Api,
+    createApi: () -> Api,
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { task ->
         Thread(task, "MusicEnhance-native-repeat").apply { isDaemon = true }
     },

@@ -105,6 +105,8 @@ internal class LyricRowView(
         }
     }
 
+    // View.onTouchEvent owns click dispatch; filtering taps leaves its accessibility action intact.
+    @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -128,8 +130,6 @@ internal class LyricRowView(
         }
         return super.onTouchEvent(event)
     }
-
-    override fun performClick(): Boolean = super.performClick()
 
     private fun cancelTap(event: MotionEvent) {
         tapAccepted = false

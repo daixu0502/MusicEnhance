@@ -12,9 +12,9 @@ import android.graphics.RectF
 import android.graphics.RenderEffect
 import android.graphics.RenderNode
 import android.graphics.Shader
-import android.graphics.drawable.ColorDrawable
 import android.widget.FrameLayout
 import android.widget.ImageView
+import androidx.core.graphics.drawable.toDrawable
 import kotlin.math.max
 import kotlin.math.min
 
@@ -24,7 +24,7 @@ internal class GradientBlurArtworkView(context: Context) : FrameLayout(context) 
     // rebuilds it when alpha changes from zero, even after it has been hidden for a while.
     private val fullBlurArtworkView = ImageView(context).apply {
         scaleType = ImageView.ScaleType.CENTER_CROP
-        foreground = ColorDrawable(0x26000000)
+        foreground = 0x26000000.toDrawable()
         alpha = 0f
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }

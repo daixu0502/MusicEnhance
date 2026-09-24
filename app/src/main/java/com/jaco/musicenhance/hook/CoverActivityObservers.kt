@@ -20,7 +20,7 @@ internal class CoverActivityObservers {
     private val observers = ConcurrentHashMap<IBinder, Observer>()
 
     fun register(token: IBinder, userId: Int, notifyResumed: (Intent) -> Unit) {
-        val observer = Observer(token, userId, notifyResumed, IBinder.DeathRecipient { unregister(token) })
+        val observer = Observer(token, userId, notifyResumed) { unregister(token) }
         if (observers.putIfAbsent(token, observer) != null) return
         synchronized(observer) {
             if (!observer.registered) return

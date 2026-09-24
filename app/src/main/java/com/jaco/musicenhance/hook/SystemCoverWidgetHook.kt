@@ -1,5 +1,6 @@
 package com.jaco.musicenhance.hook
 
+import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -7,7 +8,6 @@ import android.os.Binder
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IInterface
-import io.github.libxposed.api.XposedInterface.Hooker
 
 /** Runs entirely in system_server; FlipHome receives its existing MIUI observer callback. */
 internal object SystemCoverWidgetHook {
@@ -20,17 +20,19 @@ internal object SystemCoverWidgetHook {
         Handler(HandlerThread("MusicEnhance-cover-policy").apply { isDaemon = true; start() }.looper)
     }
 
+    // HyperOS exposes no public widget ownership API; capture only FlipHome's observer via LSPosed.
+    @SuppressLint("PrivateApi")
     fun install(loader: ClassLoader) = safeHook("system cover widget observer") {
         val observerType = loader.loadClass(OBSERVER_TYPE)
         val proxyType = loader.loadClass("$OBSERVER_TYPE\$Stub\$Proxy")
         val resumed = observerType.getMethod("activityResumed", Intent::class.java)
         for (event in listOf("activityResumed", "activityPaused", "activityStopped", "activityDestroyed")) {
-            module.installHook(proxyType.getDeclaredMethod(event, Intent::class.java), "musicenhance.widget.observer.$event", Hooker { chain ->
+            module.installHook(proxyType.getDeclaredMethod(event, Intent::class.java), "musicenhance.widget.observer.$event") { chain ->
                 val callback = chain.thisObject as? IInterface
                 if (callback == null) chain.proceed() else observers.deliverNative(
                     callback.asBinder(), event, chain.args.firstOrNull() as? Intent,
                 ) { chain.proceed() }
-            })
+            }
         }
 
         // FlipHome tries AMS first and ATMS second. Match the observer argument, including
@@ -47,7 +49,7 @@ internal object SystemCoverWidgetHook {
         }.distinct()
         check(methods.any { it.name == "registerActivityObserver" }) { "MIUI activity observer registration unavailable" }
         methods.forEachIndexed { index, method ->
-            module.installHook(method, "musicenhance.widget.observer.registration.$index", Hooker { chain ->
+            module.installHook(method, "musicenhance.widget.observer.registration.$index") { chain ->
                 val callerUid = Binder.getCallingUid()
                 val callback = chain.args.firstOrNull(observerType::isInstance) as? IInterface
                 val result = chain.proceed()
@@ -71,7 +73,7 @@ internal object SystemCoverWidgetHook {
                     }
                 }
                 result
-            })
+            }
         }
         moduleInfo("System cover widget observer hooks installed")
     }
@@ -91,7 +93,7 @@ internal object SystemCoverWidgetHook {
     private fun serviceContext(service: Any?): Context? {
         var type = service?.javaClass
         while (type != null) {
-            val field = runCatching { type!!.getDeclaredField("mContext") }.getOrNull()
+            val field = runCatching { type.getDeclaredField("mContext") }.getOrNull()
             if (field != null) return field.apply { isAccessible = true }.get(service) as? Context
             type = type.superclass
         }

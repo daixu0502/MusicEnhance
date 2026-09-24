@@ -1,40 +1,29 @@
 package com.jaco.musicenhance.player
 
-import android.graphics.Bitmap
-import com.jaco.musicenhance.player.lyrics.LyricsProvider
-import com.jaco.musicenhance.player.model.LyricsSnapshot
-import com.jaco.musicenhance.player.model.PlayerControlState
-import com.jaco.musicenhance.player.model.PlayerSnapshot
+import com.jaco.musicenhance.player.model.PlayerDisplayState
 
 /**
- * Called on the UI thread. Return cached state and queue slow IPC/network work on a worker.
- * Native view reads and clicks stay on the UI thread. Unknown optional state must remain unknown.
+ * Presentation boundary: emit resolved state on the main thread and receive user actions.
+ * The view never reads native metadata, requests lyrics or selects between artwork sources.
  */
 internal interface PlayerController {
     val appName: String
-    fun snapshot(): PlayerSnapshot
-    fun addListener(listener: (PlayerSnapshot) -> Unit)
-    fun removeListener(listener: (PlayerSnapshot) -> Unit)
+    fun addListener(listener: (PlayerDisplayState) -> Unit)
+    fun removeListener(listener: (PlayerDisplayState) -> Unit)
+    fun setActive(active: Boolean)
+    fun setLyricsRequested(requested: Boolean)
     fun playPause()
     fun previous()
     fun next()
-    fun seekTo(positionMs: Long)
-    fun seekAndPlay(positionMs: Long)
+    fun seekTo(positionMs: Long, trackKey: String)
+    fun seekAndPlay(positionMs: Long, trackKey: String)
 
-    /** Optional app-specific features return cached data; the default provider is unsupported. */
-    fun lyrics(snapshot: PlayerSnapshot): LyricsSnapshot = LyricsProvider.Unsupported.snapshot(snapshot)
-    /** Remove per-view listeners and invalidate pending app-specific work. */
+    /** Stop updates, remove listeners and invalidate pending app-specific work. */
     fun release() {}
-    fun controlState(): PlayerControlState
     fun cycleRepeat(): Boolean
     fun toggleFavorite(): Boolean
-    fun nativeArtwork(): Bitmap?
-    /** Hold the previous background while a host with stale metadata resolves its new cover. */
-    val holdPreviousArtworkWhileLoading: Boolean get() = false
-    /** Return artwork verified for this snapshot's song; null while unavailable/loading. */
-    fun verifiedArtwork(snapshot: PlayerSnapshot): Bitmap? = null
+    /** Read the latest cached audio sample at the display's frame rate; no IPC or analysis here. */
     fun bassLevel(): Float
-    fun setSpectrumPlaybackActive(active: Boolean)
 }
 
 internal const val PLAYER_OVERLAY_TAG = "musicenhance_cover_player"

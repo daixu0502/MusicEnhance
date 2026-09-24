@@ -2,6 +2,7 @@ package com.jaco.musicenhance.player.artwork
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import androidx.core.graphics.get
 
 /** Samples artwork hues and adjusts brightness for a visible spectrum on the camera rail. */
 internal object ArtworkPalette {
@@ -25,7 +26,7 @@ internal object ArtworkPalette {
         while (y < bitmap.height) {
             var x = stepX / 2
             while (x < bitmap.width) {
-                val pixel = bitmap.getPixel(x, y)
+                val pixel = bitmap[x, y]
                 if (Color.alpha(pixel) >= 160) {
                     Color.colorToHSV(pixel, hsv)
                     val saturation = hsv[1]

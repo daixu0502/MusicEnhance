@@ -13,7 +13,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34, 35], manifest = Config.NONE)
 class CoverActivityObserversTest {
-    private class Token : IBinder by Binder() {
+    private class Token : Binder() {
         val recipients = mutableSetOf<IBinder.DeathRecipient>()
         var beforeLink: () -> Unit = {}
         private var alive = true
@@ -26,7 +26,7 @@ class CoverActivityObserversTest {
     private val component = ComponentName("com.kugou.android.lite", "com.kugou.android.app.MediaActivity")
     private val other = ComponentName("com.example", "com.example.Home")
     private fun resume(registry: CoverActivityObservers, token: IBinder, target: ComponentName = component) =
-        registry.deliverNative(token, "activityResumed", Intent().setComponent(target)) { Unit }
+        registry.deliverNative(token, "activityResumed", Intent().setComponent(target)) {}
 
     @Test fun refreshUsesRealIntentAndKeepsAnIndependentCopy() {
         val registry = CoverActivityObservers()
@@ -35,7 +35,7 @@ class CoverActivityObserversTest {
         registry.register(token, 0) { received += Intent(it); it.component = other }
         assertEquals(0, registry.refresh(component, 0))
         val original = Intent("native-resume").setComponent(component).putExtra("native-extra", 12)
-        registry.deliverNative(token, "activityResumed", original) { Unit }
+        registry.deliverNative(token, "activityResumed", original) {}
         original.component = other
         assertEquals(1, registry.refresh(component, 0))
         assertEquals(1, registry.refresh(component, 0))
@@ -60,7 +60,7 @@ class CoverActivityObserversTest {
             val token = Token()
             registry.register(token, 0) { }
             resume(registry, token)
-            registry.deliverNative(token, event, Intent().setComponent(component)) { Unit }
+            registry.deliverNative(token, event, Intent().setComponent(component)) {}
             assertEquals(0, registry.refresh(component, 0))
             resume(registry, token)
             assertEquals(1, registry.refresh(component, 0))
@@ -72,7 +72,7 @@ class CoverActivityObserversTest {
         val token = Token()
         registry.register(token, 10) { }
         resume(registry, token)
-        registry.deliverNative(token, "activityDestroyed", Intent().setComponent(other)) { Unit }
+        registry.deliverNative(token, "activityDestroyed", Intent().setComponent(other)) {}
         assertEquals(0, registry.refresh(component, 0))
         assertEquals(1, registry.refresh(component, 10))
     }

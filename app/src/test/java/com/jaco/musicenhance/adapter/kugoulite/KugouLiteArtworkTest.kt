@@ -119,6 +119,8 @@ class KugouLiteArtworkTest {
         requireNotNull(source.currentSong(PlayerSnapshot.Empty.copy(title = "Song", artist = "Artist"))),
     ).map { it.hash }
 
+    // Host API names are invoked reflectively by the adapter under test.
+    @Suppress("unused")
     class FakeSong(private val hash: String, private val id: Long, private val title: String,
         private val artist: String, private val image: String?) {
         fun getHashValue() = hash
@@ -128,6 +130,7 @@ class KugouLiteArtworkTest {
         fun b1() = image
     }
 
+    @Suppress("unused")
     object FakeService {
         var song: FakeSong? = null
         var queue = emptyList<FakeSong>()
@@ -136,7 +139,7 @@ class KugouLiteArtworkTest {
         val ranges = mutableListOf<Pair<Int, Int>>()
         var afterRange: (() -> Unit)? = null
         @JvmStatic fun s0() = song
-        @JvmStatic fun I1(): FakeSong? = error("I1 reads the next song")
+        @JvmStatic fun I1(): FakeSong = error("I1 reads the next song")
         @JvmStatic fun V1() = queue.size
         @JvmStatic fun N1() = position
         @JvmStatic fun M1() = mode

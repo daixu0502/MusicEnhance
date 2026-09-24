@@ -1,5 +1,6 @@
 package com.jaco.musicenhance.hook
 
+import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Rect
@@ -12,7 +13,6 @@ import android.view.animation.AnimationUtils
 import android.view.animation.LinearInterpolator
 import android.view.animation.RotateAnimation
 import com.jaco.musicenhance.adapter.MusicAppRegistry
-import io.github.libxposed.api.XposedInterface.Hooker
 import kotlin.math.max
 import kotlin.math.min
 
@@ -20,6 +20,8 @@ import kotlin.math.min
 internal object CoverRotationAnimationHook {
     private val angle = ThreadLocal<Float>()
 
+    // LSPosed hooks Shell internals only for supported Flip transitions; the caller uses safeHook.
+    @SuppressLint("PrivateApi")
     fun install(loader: ClassLoader) {
         if (Build.DEVICE.lowercase() !in setOf("ruyi", "bixi")) return
         val handler = Class.forName("com.android.wm.shell.transition.DefaultTransitionHandler", false, loader)
@@ -36,7 +38,7 @@ internal object CoverRotationAnimationHook {
         methods.forEachIndexed { index, method ->
             method.isAccessible = true
             val hintIndex = method.parameterTypes.indexOfFirst { it == Int::class.javaPrimitiveType }
-            module.installHook(method, "musicenhance.shell.rotation.$index", Hooker { chain ->
+            module.installHook(method, "musicenhance.shell.rotation.$index") { chain ->
                 val oldAngle = angle.get()
                 val match = runCatching {
                     val change = chain.args.firstOrNull { changeType.isInstance(it) } ?: return@runCatching null
@@ -45,12 +47,14 @@ internal object CoverRotationAnimationHook {
                     val end = endRotation.invoke(change) as Int
                     val before = startBounds.invoke(change) as Rect
                     val after = endBounds.invoke(change) as Rect
-                    val top = (changes.invoke(info) as List<*>).firstNotNullOfOrNull {
-                        (taskInfo.invoke(it) as? ActivityManager.RunningTaskInfo)?.topActivity
+                    val topTask = (changes.invoke(info) as List<*>).firstNotNullOfOrNull {
+                        (taskInfo.invoke(it) as? ActivityManager.RunningTaskInfo)?.takeIf { task -> task.topActivity != null }
                     }
+                    val top = topTask?.topActivity
                     val profile = MusicAppRegistry.find(top?.packageName) ?: return@runCatching null
                     if (!CoverRotationPolicy.matches(start, end, before.width(), before.height(),
-                            after.width(), after.height(), top?.packageName, top?.className) || !hookEnabled(profile)
+                            after.width(), after.height(), top?.packageName, top?.className,
+                            isEnhancedTask(topTask)) || !hookEnabled(profile)
                     ) return@runCatching null
                     if (start == 0) 180f else -180f
                 }.getOrNull()
@@ -67,7 +71,7 @@ internal object CoverRotationAnimationHook {
                 } finally {
                     if (oldAngle == null) angle.remove() else angle.set(oldAngle)
                 }
-            })
+            }
             module.deoptimize(method)
         }
 
@@ -76,51 +80,55 @@ internal object CoverRotationAnimationHook {
             val impl = Class.forName("com.android.wm.shell.common.transition.ScreenRotationAnimationImpl", false, loader)
             for (enter in listOf(true, false)) {
                 val name = if (enter) "loadRotation180Enter" else "loadRotation180Exit"
-                module.installHook(impl.declaredMethod(name), "musicenhance.shell.$name", Hooker { chain ->
+                module.installHook(impl.declaredMethod(name), "musicenhance.shell.$name") { chain ->
                     angle.get()?.let {
                         moduleInfo("music app cover rotation factory=$name")
                         createAnimation(it, enter)
                     } ?: chain.proceed()
-                })
+                }
             }
         }
         module.installHook(
             AnimationUtils::class.java.declaredMethod("loadAnimation", Context::class.java, Int::class.javaPrimitiveType!!),
             "musicenhance.shell.rotation.resources",
-            Hooker { chain ->
-                val degrees = angle.get()
-                val context = chain.args[0] as? Context
-                val name = if (degrees == null || context == null) null else runCatching {
-                    context.resources.getResourceEntryName(chain.args[1] as Int)
-                }.getOrNull()
-                if (degrees != null) moduleInfo("music app cover rotation resource=$name")
-                when (name) {
-                    "screen_rotate_180_enter" -> createAnimation(degrees!!, true)
-                    "screen_rotate_180_exit" -> createAnimation(degrees!!, false)
-                    else -> chain.proceed()
-                }
-            },
-        )
+        ) { chain ->
+            val degrees = angle.get()
+            val context = chain.args[0] as? Context
+            val name = if (degrees == null || context == null) null else runCatching {
+                context.resources.getResourceEntryName(chain.args[1] as Int)
+            }.getOrNull()
+            if (degrees != null) moduleInfo("music app cover rotation resource=$name")
+            when (name) {
+                "screen_rotate_180_enter" -> createAnimation(degrees!!, true)
+                "screen_rotate_180_exit" -> createAnimation(degrees!!, false)
+                else -> chain.proceed()
+            }
+        }
         safeHook("cover rotation surface verification") {
             val animator = Class.forName("com.android.wm.shell.transition.DefaultSurfaceAnimator", false, loader)
             animator.declaredMethods.filter { it.name == "buildWindowAnimation" }.forEach {
                 module.deoptimize(it)
             }
             animator.declaredMethods.filter { it.name == "buildSurfaceAnimation" }.forEachIndexed { index, method ->
-                module.installHook(method, "musicenhance.shell.rotation.surface.$index", Hooker { chain ->
+                module.installHook(method, "musicenhance.shell.rotation.surface.$index") { chain ->
                     if (angle.get() != null) {
                         val animation = chain.args.firstOrNull { it is Animation } as? Animation
                         moduleInfo("music app cover rotation surface: custom=${animation is CoverAnimation}, " +
                             "duration=${animation?.computeDurationHint()}, animation=${animation?.javaClass?.simpleName}")
                     }
                     chain.proceed()
-                })
+                }
             }
         }
         moduleInfo("music app cover 180-degree system animation hooks ready")
     }
 
     private class CoverAnimation : AnimationSet(false)
+
+    private fun isEnhancedTask(task: ActivityManager.RunningTaskInfo?): Boolean = runCatching {
+        val info = task?.javaClass?.getField("topActivityInfo")?.get(task) as? android.content.pm.ActivityInfo
+        info?.metaData?.getBoolean(com.jaco.musicenhance.player.PlayerActivitySessions.OWNED_ACTIVITY_METADATA) == true
+    }.getOrDefault(false)
 
     private fun createAnimation(degrees: Float, enter: Boolean): Animation = CoverAnimation().apply {
         addAnimation(RotateAnimation(
@@ -152,12 +160,13 @@ internal object CoverRotationAnimationHook {
 
 internal object CoverRotationPolicy {
     fun matches(start: Int, end: Int, startW: Int, startH: Int, endW: Int, endH: Int,
-                packageName: String?, activityName: String?): Boolean {
+                packageName: String?, activityName: String?, enhancedActivity: Boolean = false): Boolean {
         fun cover(w: Int, h: Int) = min(w, h) > 0 && min(w, h).toFloat() / max(w, h) >= 0.60f
         return start in setOf(0, 2) && end in setOf(0, 2) && start != end &&
             cover(startW, startH) && cover(endW, endH) &&
             MusicAppRegistry.find(packageName)?.let {
-                it.isPlayerActivity(activityName) && !it.isHorizontalPlayerActivity(activityName)
+                (enhancedActivity && it.ownsActivity(activityName)) ||
+                    (it.isPlayerActivity(activityName) && !it.isHorizontalPlayerActivity(activityName))
             } == true
     }
 }

@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.view.isVisible
 import com.jaco.musicenhance.player.PLAYER_OVERLAY_TAG
 import kotlin.math.max
 import kotlin.math.min
@@ -85,10 +86,10 @@ internal object NativePlayerViews {
                 var target: View? = view
                 var depth = 0
                 while (target != null && !target.isClickable && depth < 4) {
-                    target = target?.parent as? View
+                    target = target.parent as? View
                     depth++
                 }
-                val clickable = target?.takeIf { it.isClickable && it.isEnabled && it.visibility == View.VISIBLE }
+                val clickable = target?.takeIf { it.isClickable && it.isEnabled && it.isVisible }
                 val score = matches * 100 + (if (description.isNotBlank()) 30 else 0) + (if (resourceName.isNotBlank()) 20 else 0)
                 if (clickable != null && score > bestScore) {
                     best = clickable

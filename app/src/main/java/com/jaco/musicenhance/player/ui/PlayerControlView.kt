@@ -1,6 +1,7 @@
 package com.jaco.musicenhance.player.ui
 
 import android.annotation.SuppressLint
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -8,6 +9,9 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.LinearInterpolator
+import androidx.core.graphics.withSave
+import androidx.core.graphics.withTranslation
 import com.jaco.musicenhance.player.model.RepeatMode
 import kotlin.math.min
 
@@ -17,6 +21,15 @@ internal class PlayerControlView(
     private val kind: Kind,
 ) : View(context) {
     enum class Kind { REPEAT, PREVIOUS, PLAY_PAUSE, NEXT, FAVORITE, DISMISS }
+    private var pendingAnimator: ValueAnimator? = null
+    private var pendingPhase = 0f
+    var pending: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            updatePendingAnimation()
+            invalidate()
+        }
 
     var playing: Boolean = false
         set(value) {
@@ -53,29 +66,67 @@ internal class PlayerControlView(
         // Every glyph uses the same 24dp canvas, 18dp optical bounds and 1.8dp stroke.
         // Touch targets retain their existing, larger layout bounds in both orientations.
         val unit = min(resources.displayMetrics.density, min(width, height) / 24f)
-        val checkpoint = canvas.save()
-        canvas.translate(width / 2f - 12f * unit, height / 2f - 12f * unit)
-        canvas.scale(unit, unit)
-        paint.color = if (active) 0xFF53E2B7.toInt() else Color.WHITE
-        paint.alpha = if (isEnabled) 255 else 110
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 1.8f
-        when (kind) {
-            Kind.REPEAT -> when (repeatMode) {
-                RepeatMode.SHUFFLE -> drawShuffle(canvas)
-                RepeatMode.SEQUENTIAL -> drawOrder(canvas)
-                else -> drawRepeat(canvas)
+        canvas.withTranslation(width / 2f - 12f * unit, height / 2f - 12f * unit) {
+            canvas.scale(unit, unit)
+            paint.color = if (active) 0xFF53E2B7.toInt() else Color.WHITE
+            paint.alpha = if (isEnabled) 255 else 110
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 1.8f
+            when (kind) {
+                Kind.REPEAT -> when (repeatMode) {
+                    RepeatMode.SHUFFLE -> drawShuffle(canvas)
+                    RepeatMode.SEQUENTIAL -> drawOrder(canvas)
+                    else -> drawRepeat(canvas)
+                }
+                Kind.PREVIOUS -> drawSkip(canvas, false)
+                Kind.PLAY_PAUSE -> if (playing) drawPause(canvas) else drawPlay(canvas)
+                Kind.NEXT -> drawSkip(canvas, true)
+                Kind.FAVORITE -> drawHeart(canvas)
+                Kind.DISMISS -> drawDismiss(canvas)
             }
-            Kind.PREVIOUS -> drawSkip(canvas, false)
-            Kind.PLAY_PAUSE -> if (playing) drawPause(canvas) else drawPlay(canvas)
-            Kind.NEXT -> drawSkip(canvas, true)
-            Kind.FAVORITE -> drawHeart(canvas)
-            Kind.DISMISS -> drawDismiss(canvas)
+            if (pending) {
+                paint.style = Paint.Style.STROKE
+                paint.color = Color.WHITE
+                paint.alpha = 220
+                paint.strokeWidth = 1.1f
+                canvas.drawArc(0.5f, 0.5f, 23.5f, 23.5f, pendingPhase * 360f - 90f, 90f, false, paint)
+            }
         }
-        canvas.restoreToCount(checkpoint)
+    }
+
+    private fun updatePendingAnimation() {
+        if (!pending || !isAttachedToWindow || !isShown || windowVisibility != VISIBLE) {
+            pendingAnimator?.cancel()
+            pendingAnimator = null
+            return
+        }
+        if (pendingAnimator != null) return
+        pendingAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 900L
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { pendingPhase = it.animatedValue as Float; invalidate() }
+            start()
+        }
+    }
+
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); updatePendingAnimation() }
+    override fun onDetachedFromWindow() {
+        pendingAnimator?.cancel()
+        pendingAnimator = null
+        super.onDetachedFromWindow()
+    }
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        updatePendingAnimation()
+    }
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        updatePendingAnimation()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (pending) return true
         if (!isEnabled) return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -100,6 +151,7 @@ internal class PlayerControlView(
     }
 
     override fun performClick(): Boolean {
+        if (pending) return false
         super.performClick()
         return true
     }
@@ -119,19 +171,19 @@ internal class PlayerControlView(
     }
 
     private fun drawSkip(canvas: Canvas, forward: Boolean) {
-        val checkpoint = canvas.save()
-        if (!forward) {
-            canvas.translate(24f, 0f)
-            canvas.scale(-1f, 1f)
+        canvas.withSave {
+            if (!forward) {
+                canvas.translate(24f, 0f)
+                canvas.scale(-1f, 1f)
+            }
+            path.reset()
+            path.moveTo(4f, 4f)
+            path.lineTo(15.5f, 12f)
+            path.lineTo(4f, 20f)
+            path.close()
+            canvas.drawPath(path, paint)
+            canvas.drawLine(20f, 4f, 20f, 20f, paint)
         }
-        path.reset()
-        path.moveTo(4f, 4f)
-        path.lineTo(15.5f, 12f)
-        path.lineTo(4f, 20f)
-        path.close()
-        canvas.drawPath(path, paint)
-        canvas.drawLine(20f, 4f, 20f, 20f, paint)
-        canvas.restoreToCount(checkpoint)
     }
 
     private fun drawRepeat(canvas: Canvas) {

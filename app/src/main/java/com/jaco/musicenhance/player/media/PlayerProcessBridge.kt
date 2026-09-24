@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
+import androidx.core.graphics.scale
 import com.jaco.musicenhance.hook.MusicEnhanceModule
 import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.player.audio.SpectrumEngine
@@ -51,11 +52,11 @@ internal object PlayerProcessBridge {
     const val COMMAND_FAVORITE = "favorite"
 
     @Volatile
-    private var context: Context? = null
+    private var processApplication: Application? = null
 
     fun initialize(application: Application) {
-        if (context != null) return
-        val appContext = application.applicationContext
+        if (processApplication != null) return
+        val appContext = application
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 when (intent.action) {
@@ -85,7 +86,7 @@ internal object PlayerProcessBridge {
             },
             Context.RECEIVER_NOT_EXPORTED,
         )
-        context = appContext
+        processApplication = application
         module.log(
             Log.INFO,
             MusicEnhanceModule.TAG,
@@ -95,7 +96,7 @@ internal object PlayerProcessBridge {
     }
 
     fun publishSnapshot(snapshot: PlayerSnapshot) {
-        val appContext = context ?: return
+        val appContext = processApplication ?: return
         val intent = Intent(ACTION_SNAPSHOT).setPackage(appContext.packageName).apply {
             putExtra(EXTRA_TITLE, snapshot.title)
             putExtra(EXTRA_ARTIST, snapshot.artist)
@@ -116,7 +117,7 @@ internal object PlayerProcessBridge {
     }
 
     fun sendCommand(command: String, positionMs: Long = 0L) {
-        val appContext = context ?: return
+        val appContext = processApplication ?: return
         appContext.sendBroadcast(
             Intent(ACTION_COMMAND).setPackage(appContext.packageName)
                 .putExtra(EXTRA_COMMAND, command)
@@ -126,7 +127,7 @@ internal object PlayerProcessBridge {
 
     fun publishSpectrum(frames: FloatArray, frameDurationMs: Int) {
         if (frames.isEmpty()) return
-        val appContext = context ?: return
+        val appContext = processApplication ?: return
         appContext.sendBroadcast(
             Intent(ACTION_SPECTRUM).setPackage(appContext.packageName)
                 .putExtra(EXTRA_SPECTRUM_FRAMES, frames)
@@ -164,8 +165,7 @@ internal object PlayerProcessBridge {
             val largest = max(bitmap.width, bitmap.height)
             val outputBitmap = if (largest > MAX_ARTWORK_SIDE) {
                 val scale = MAX_ARTWORK_SIDE.toFloat() / largest
-                Bitmap.createScaledBitmap(
-                    bitmap,
+                bitmap.scale(
                     (bitmap.width * scale).toInt().coerceAtLeast(1),
                     (bitmap.height * scale).toInt().coerceAtLeast(1),
                     true,
@@ -177,8 +177,7 @@ internal object PlayerProcessBridge {
             if (bytes.size > MAX_ARTWORK_BYTES) {
                 val fallbackScale = FALLBACK_ARTWORK_SIDE.toFloat() / max(outputBitmap.width, outputBitmap.height)
                 val fallback = if (fallbackScale < 1f) {
-                    Bitmap.createScaledBitmap(
-                        outputBitmap,
+                    outputBitmap.scale(
                         (outputBitmap.width * fallbackScale).toInt().coerceAtLeast(1),
                         (outputBitmap.height * fallbackScale).toInt().coerceAtLeast(1),
                         true,

@@ -1,5 +1,6 @@
 package com.jaco.musicenhance.device
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.Rect
 import android.os.Build
@@ -63,6 +64,7 @@ internal object CoverScreenDetector {
     }
 
     /** null means that this HyperOS build does not expose the private folded-state API. */
+    @SuppressLint("PrivateApi")
     private fun queryXiaomiFoldedState(): Boolean? = runCatching {
         val stubClass = Class.forName("android.sizecompat.MiuiAppSizeCompatModeStub")
         val stub = stubClass.getDeclaredMethod("get").apply { isAccessible = true }.invoke(null)

@@ -13,7 +13,7 @@ android {
         applicationId = "com.jaco.musicenhance"
         minSdk = 34
         targetSdk = 37
-        versionCode = 54
+        versionCode = 67
         versionName = "2.2.0"
     }
 

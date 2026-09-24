@@ -1,5 +1,6 @@
 package com.jaco.musicenhance.device
 
+import android.annotation.SuppressLint
 import android.graphics.Rect
 import android.view.DisplayCutout
 import com.jaco.musicenhance.hook.moduleInfo
@@ -8,13 +9,17 @@ import com.jaco.musicenhance.hook.moduleInfo
 internal object CoverDisplayGeometry {
     data class State(val rotation: Int, val width: Int, val height: Int, val cutout: Rect?)
 
+    // Public Activity metrics can contain compatibility rotation overrides; use one physical snapshot.
+    // A missing platform API leaves this reader unavailable and the caller uses its layout fallback.
     private val reader by lazy {
         runCatching {
+            @SuppressLint("PrivateApi")
             val type = Class.forName("android.hardware.display.DisplayManagerGlobal")
             val global = type.getDeclaredMethod("getInstance").invoke(null)
             val method = type.getDeclaredMethod("getDisplayInfo", Int::class.javaPrimitiveType).apply {
                 isAccessible = true
             }
+            @SuppressLint("PrivateApi")
             val info = Class.forName("android.view.DisplayInfo")
             val rotation = info.getField("rotation")
             val width = info.getField("logicalWidth")

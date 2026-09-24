@@ -11,9 +11,7 @@ import android.media.session.PlaybackState
 import android.util.Log
 import com.jaco.musicenhance.adapter.MusicAppAdapters
 import com.jaco.musicenhance.adapter.isHorizontalPlayerActivityName
-import com.jaco.musicenhance.adapter.isPlayerActivityName
 import com.jaco.musicenhance.device.CoverScreenDetector
-import com.jaco.musicenhance.player.CoverPlayerInjector
 import com.jaco.musicenhance.player.audio.SpectrumEngine
 import com.jaco.musicenhance.player.media.MediaSessionStore
 import com.jaco.musicenhance.player.media.PlayerProcessBridge
@@ -30,6 +28,7 @@ internal object MusicAppHooks {
                 ),
                 "musicenhance.application.create",
                 after { chain ->
+                    PlayerActivityLaunchHook.install(chain.thisObject as? Instrumentation)
                     (chain.args.firstOrNull() as? Application)?.let { application ->
                         MusicAppAdapters.onApplicationCreated(application)
                         PlayerProcessBridge.initialize(application)
@@ -38,25 +37,25 @@ internal object MusicAppHooks {
             )
         }
         installAudioSpectrumHooks()
+        PlayerActivityLaunchHook.install()
         installHorizontalPlayerLaunchBlock()
-        installPlayerOrientationHooks()
+        installPlayerLifecycleHooks()
         safeHook("activity pause cleanup") {
             module.installHook(
                 Instrumentation::class.java.declaredMethod("callActivityOnPause", Activity::class.java),
                 "musicenhance.activity.pause",
-                Hooker { chain ->
-                    safeHook("player window pause") {
-                        (chain.args.firstOrNull() as? Activity)?.let(CoverPlayerInjector::onPaused)
-                    }
-                    chain.proceed()
-                },
-            )
+            ) { chain ->
+                safeHook("player window pause") {
+                    (chain.args.firstOrNull() as? Activity)?.let(PlayerActivityRouter::onPaused)
+                }
+                chain.proceed()
+            }
         }
         safeHook("activity destroy cleanup") {
             module.installHook(
                 Instrumentation::class.java.declaredMethod("callActivityOnDestroy", Activity::class.java),
                 "musicenhance.activity.destroy",
-                after { chain -> (chain.args.firstOrNull() as? Activity)?.let(CoverPlayerInjector::onDestroyed) },
+                after { chain -> (chain.args.firstOrNull() as? Activity)?.let(PlayerActivityRouter::onDestroyed) },
             )
         }
         safeHook("MediaSession.setMetadata") {
@@ -103,7 +102,7 @@ internal object MusicAppHooks {
                         MusicEnhanceModule.TAG,
                         "Activity resumed; process=$processName, activity=${activity.javaClass.name}, displayId=$displayId",
                     )
-                    CoverPlayerInjector.onResumed(activity)
+                    PlayerActivityRouter.onResumed(activity)
                 },
             )
         }
@@ -125,20 +124,19 @@ internal object MusicAppHooks {
                     module.installHook(
                         method,
                         "musicenhance.audio.write.$index",
-                        Hooker { chain ->
-                            val outermostWrite = SpectrumEngine.enterAudioWrite()
-                            try {
-                                if (outermostWrite) {
-                                    runCatching {
-                                        SpectrumEngine.capture(chain.thisObject as? AudioTrack, chain.args)
-                                    }
+                    ) { chain ->
+                        val outermostWrite = SpectrumEngine.enterAudioWrite()
+                        try {
+                            if (outermostWrite) {
+                                runCatching {
+                                    SpectrumEngine.capture(chain.thisObject as? AudioTrack, chain.args)
                                 }
-                                chain.proceed()
-                            } finally {
-                                SpectrumEngine.exitAudioWrite()
                             }
-                        },
-                    )
+                            chain.proceed()
+                        } finally {
+                            SpectrumEngine.exitAudioWrite()
+                        }
+                    }
                 }
             }
     }
@@ -161,12 +159,11 @@ internal object MusicAppHooks {
                 module.installHook(
                     method,
                     "musicenhance.horizontal.activity.launch.$index",
-                    Hooker { chain ->
-                        val activity = chain.thisObject as? Activity
-                        val intent = chain.args.firstOrNull() as? Intent
-                        if (shouldBlockHorizontalLaunch(activity, intent)) null else chain.proceed()
-                    },
-                )
+                ) { chain ->
+                    val activity = chain.thisObject as? Activity
+                    val intent = chain.args.firstOrNull() as? Intent
+                    if (shouldBlockHorizontalLaunch(activity, intent)) null else chain.proceed()
+                }
             }
         }
 
@@ -183,12 +180,11 @@ internal object MusicAppHooks {
                 module.installHook(
                     method,
                     "musicenhance.horizontal.instrumentation.launch.$index",
-                    Hooker { chain ->
-                        val activity = chain.args.filterIsInstance<Activity>().firstOrNull()
-                        val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
-                        if (shouldBlockHorizontalLaunch(activity, intent)) null else chain.proceed()
-                    },
-                )
+                ) { chain ->
+                    val activity = chain.args.filterIsInstance<Activity>().firstOrNull()
+                    val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
+                    if (shouldBlockHorizontalLaunch(activity, intent)) null else chain.proceed()
+                }
             }
         }
         moduleInfo(
@@ -208,7 +204,7 @@ internal object MusicAppHooks {
         return true
     }
 
-    private fun installPlayerOrientationHooks() {
+    private fun installPlayerLifecycleHooks() {
         Instrumentation::class.java.declaredMethods
             .filter { method ->
                 method.name == "callActivityOnCreate" &&
@@ -220,22 +216,14 @@ internal object MusicAppHooks {
                     module.installHook(
                         method,
                         "musicenhance.activity.create.$index",
-                        Hooker { chain ->
-                            val activity = chain.args.firstOrNull() as? Activity
-                            if (
-                                activity != null &&
-                                isPlayerActivityName(activity.javaClass.name) &&
-                                CoverScreenDetector.isCoverScreen(activity)
-                            ) {
-                                CoverPlayerInjector.prepareOrientation(activity)
-                            }
-                            val result = chain.proceed()
-                            safeHook("player window created") {
-                                activity?.let(CoverPlayerInjector::onCreated)
-                            }
-                            result
-                        },
-                    )
+                    ) { chain ->
+                        val activity = chain.args.firstOrNull() as? Activity
+                        val result = chain.proceed()
+                        safeHook("player window created") {
+                            activity?.let(PlayerActivityRouter::onCreated)
+                        }
+                        result
+                    }
                 }
             }
     }

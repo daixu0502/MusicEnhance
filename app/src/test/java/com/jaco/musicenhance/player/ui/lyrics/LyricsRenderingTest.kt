@@ -65,7 +65,7 @@ class LyricsRenderingTest {
         val snapshot = LyricsSnapshot("track", LyricsStatus.READY,
             listOf(LyricLine(1000, "第一句"), LyricLine(2000, "第二句")))
         lyrics.render(snapshot, 0)
-        layout(lyrics, 400, 600)
+        layout(lyrics, 600)
         val bitmap = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         val column = lyrics.getChildAt(0) as LinearLayout
@@ -102,7 +102,7 @@ class LyricsRenderingTest {
         val snapshot = LyricsSnapshot("track", LyricsStatus.READY,
             (0..20).map { LyricLine(it * 1_000L, "Line $it") })
         lyrics.render(snapshot, 0)
-        layout(lyrics, 400, 600)
+        layout(lyrics, 600)
         val bitmap = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         try {
@@ -133,7 +133,7 @@ class LyricsRenderingTest {
     @Test fun blurPaddingPreservesRowSpacingAndDoesNotExpandTheClickableText() {
         val context = RuntimeEnvironment.getApplication()
         val row = LyricRowView(context, LyricLine(0, "歌词 Agyp"), 22f) {}
-        layout(row, 400, null)
+        layout(row, null)
         val label = row.getChildAt(0) as TextView
         val density = context.resources.displayMetrics.density
         val originalSpacing = (18f * density).toInt() * 2
@@ -149,8 +149,8 @@ class LyricsRenderingTest {
         assertFalse(row.hitsText(textX, row.height.toFloat()))
     }
 
-    private fun layout(view: View, width: Int, height: Int?) {
-        view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+    private fun layout(view: View, height: Int?) {
+        view.measure(View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
             View.MeasureSpec.makeMeasureSpec(height ?: 0,
                 if (height == null) View.MeasureSpec.UNSPECIFIED else View.MeasureSpec.EXACTLY))
         view.layout(0, 0, view.measuredWidth, view.measuredHeight)
