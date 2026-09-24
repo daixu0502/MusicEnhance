@@ -16,7 +16,7 @@ class PrefsTest {
         val preferences = RuntimeEnvironment.getApplication().getSharedPreferences("legacy", Context.MODE_PRIVATE)
         preferences.edit().putBoolean("hook_kugou_music", true).commit()
         assertTrue(Prefs.isHookEnabled(preferences, Prefs.HOOK_KUGOU_LITE_MUSIC))
-        assertFalse(Prefs.isHookEnabled(preferences, "hook_kugou_standard_music"))
+        assertFalse(Prefs.isHookEnabled(preferences, Prefs.HOOK_KUGOU_STANDARD_MUSIC))
         assertFalse(Prefs.isHookEnabled(preferences, Prefs.HOOK_QQ_MUSIC))
     }
 
@@ -26,5 +26,12 @@ class PrefsTest {
             .putBoolean(Prefs.HOOK_KUGOU_LITE_MUSIC, false).commit()
         assertFalse(Prefs.isHookEnabled(preferences, Prefs.HOOK_KUGOU_LITE_MUSIC))
         assertFalse(Prefs.isHookEnabled(null, Prefs.HOOK_KUGOU_LITE_MUSIC))
+    }
+
+    @Test fun standardEditionHasAnIndependentSwitch() {
+        val preferences = RuntimeEnvironment.getApplication().getSharedPreferences("standard", Context.MODE_PRIVATE)
+        preferences.edit().putBoolean(Prefs.HOOK_KUGOU_STANDARD_MUSIC, true).commit()
+        assertTrue(Prefs.isHookEnabled(preferences, Prefs.HOOK_KUGOU_STANDARD_MUSIC))
+        assertFalse(Prefs.isHookEnabled(preferences, Prefs.HOOK_KUGOU_LITE_MUSIC))
     }
 }

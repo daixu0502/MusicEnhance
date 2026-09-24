@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -31,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -43,6 +45,8 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -50,6 +54,7 @@ import androidx.core.content.edit
 import com.jaco.musicenhance.adapter.MusicAppProfile
 import com.jaco.musicenhance.adapter.MusicAppRegistry
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -110,14 +115,23 @@ private fun MainScreen(
 ) {
     val context = LocalContext.current
     val connected = XposedServiceState.isConnected
-    val scrollBehavior = MiuixScrollBehavior()
-    val listState = rememberLazyListState()
+    var showMusicAppHooks by rememberSaveable { mutableStateOf(false) }
+
+    BackHandler(enabled = showMusicAppHooks) { showMusicAppHooks = false }
 
     DisposableEffect(Unit) {
         context.deleteSharedPreferences(Prefs.NAME)
         XposedServiceState.ensureRegistered()
         onDispose { }
     }
+
+    if (showMusicAppHooks) {
+        MusicAppHookScreen(onBack = { showMusicAppHooks = false })
+        return
+    }
+
+    val scrollBehavior = MiuixScrollBehavior()
+    val listState = rememberLazyListState()
 
     Scaffold(
         topBar = {
@@ -140,8 +154,13 @@ private fun MainScreen(
                 ) {
                     ActivationCard(connected)
 
-                    MusicAppRegistry.profiles.forEach { profile ->
-                        MusicAppPreferences(profile)
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        ArrowPreference(
+                            title = "音乐应用 Hook",
+                            summary = if (connected) "分别管理各音乐播放器；修改后需重启对应音乐应用"
+                                else "请先在 LSPosed 中启用模块",
+                            onClick = { showMusicAppHooks = true },
+                        )
                     }
 
                     PlayerPreferences()
@@ -163,29 +182,74 @@ private fun MainScreen(
 }
 
 @Composable
-private fun MusicAppPreferences(profile: MusicAppProfile) {
+private fun MusicAppHookScreen(onBack: () -> Unit) {
+    val scrollBehavior = MiuixScrollBehavior()
+    val listState = rememberLazyListState()
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = "音乐应用 Hook",
+                navigationIcon = { BackNavigationButton(onBack) },
+                scrollBehavior = scrollBehavior,
+            )
+        },
+    ) { padding ->
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxHeight().scrollEndHaptic().overScrollVertical()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            contentPadding = padding,
+        ) {
+            item {
+                Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        MusicAppRegistry.profiles.forEach { profile -> MusicAppPreference(profile) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BackNavigationButton(onClick: () -> Unit) {
+    val color = colorScheme.onSurface
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.semantics { contentDescription = "返回" },
+    ) {
+        Canvas(modifier = Modifier.size(24.dp)) {
+            val strokeWidth = 2.dp.toPx()
+            drawLine(color, Offset(size.width * 0.75f, size.height * 0.18f),
+                Offset(size.width * 0.33f, size.height * 0.50f), strokeWidth, StrokeCap.Round)
+            drawLine(color, Offset(size.width * 0.33f, size.height * 0.50f),
+                Offset(size.width * 0.75f, size.height * 0.82f), strokeWidth, StrokeCap.Round)
+        }
+    }
+}
+
+@Composable
+private fun MusicAppPreference(profile: MusicAppProfile) {
     val prefs = XposedServiceState.prefs
     val connected = XposedServiceState.isConnected
     var enabled by remember(prefs, profile.packageName) {
         mutableStateOf(Prefs.isHookEnabled(prefs, profile.enabledPreference))
     }
-    Card(modifier = Modifier.fillMaxWidth()) {
-        SwitchPreference(
-            title = "Hook ${profile.displayName}",
-            summary = when {
-                !connected -> "请先在 LSPosed 中启用模块"
-                profile.experimental -> "实验性适配，尚未完成真机验证；开关修改后需重启该音乐应用"
-                enabled -> "已启用；重启 ${profile.displayName} 后应用外屏播放器"
-                else -> "关闭后重启 ${profile.displayName} 即可恢复原界面"
-            },
-            checked = enabled,
-            onCheckedChange = { checked ->
-                val remotePrefs = prefs ?: return@SwitchPreference
-                enabled = checked
-                remotePrefs.edit { putBoolean(profile.enabledPreference, checked) }
-            },
-        )
-    }
+    SwitchPreference(
+        title = "Hook ${profile.displayName}",
+        summary = when {
+            !connected -> "请先在 LSPosed 中启用模块"
+            profile.experimental -> "实验性适配，尚未完成真机验证；开关修改后需重启该音乐应用"
+            enabled -> "已启用；重启 ${profile.displayName} 后应用外屏播放器"
+            else -> "关闭后重启 ${profile.displayName} 即可恢复原界面"
+        },
+        checked = enabled,
+        onCheckedChange = { checked ->
+            val remotePrefs = prefs ?: return@SwitchPreference
+            enabled = checked
+            remotePrefs.edit { putBoolean(profile.enabledPreference, checked) }
+        },
+    )
 }
 
 @Composable

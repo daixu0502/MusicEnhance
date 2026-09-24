@@ -1,5 +1,6 @@
 package com.jaco.musicenhance.adapter.kugoulite
 
+import com.jaco.musicenhance.adapter.PolledFavoriteControl
 import android.app.Activity
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.player.model.PlayerSnapshot
@@ -7,7 +8,7 @@ import java.lang.reflect.Modifier
 import java.util.Locale
 
 /** 5.2.9's favorite database and native action delegate, independent of player button tags. */
-internal class KugouLiteFavoriteSource(private val activity: Activity) : KugouLiteFavoriteControl.Source {
+internal class KugouLiteFavoriteSource(private val activity: Activity) : PolledFavoriteControl.Source {
     private val loader = activity.classLoader
     private val service = loader.loadClass("com.kugou.framework.service.util.PlaybackServiceUtil")
     private val songType = loader.loadClass("com.kugou.framework.service.entity.KGMusicWrapper")
@@ -42,17 +43,17 @@ internal class KugouLiteFavoriteSource(private val activity: Activity) : KugouLi
     }
 
     /** Called on the worker: O(hash, mixId) reads the same cache/database used by SongFavDelegate. */
-    override fun read(player: PlayerSnapshot): KugouLiteFavoriteControl.State? {
+    override fun read(player: PlayerSnapshot): PolledFavoriteControl.State? {
         val song = currentSong() ?: return null
         if (song.title.isBlank() || song.title != player.title.trim() ||
             (song.artist.isNotBlank() && player.artist.isNotBlank() && song.artist != player.artist.trim())) return null
         val isFavorite = favorite.invoke(null, song.hash, song.mixId) as Boolean
         if (currentSong()?.key != song.key) return null
-        return KugouLiteFavoriteControl.State(song.key, isFavorite)
+        return PolledFavoriteControl.State(song.key, isFavorite)
     }
 
     /** Called only for an explicit click, on main, as the native delegate may open login/permission UI. */
-    override fun toggle(state: KugouLiteFavoriteControl.State): Boolean {
+    override fun toggle(state: PolledFavoriteControl.State): Boolean {
         if (activity.isFinishing || activity.isDestroyed || currentSong()?.key != state.trackKey) return false
         // LandPlayerActivity.b -> p.a -> LandPlayerPage.e. Resolve by declared type because
         // Kotlin source names differ from the actual obfuscated field names in the APK.

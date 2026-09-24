@@ -95,6 +95,27 @@ class CoverPlayerViewTest {
     }
 
     @Test
+    fun returningToAVisibleWindowRebuildsGradientBlurLayers() {
+        val activityController = Robolectric.buildActivity(Activity::class.java).setup().visible()
+        try {
+            val activity = activityController.get()
+            val player = CoverPlayerView(activity, activity.window, EmptyPlayerController) {}
+            activity.setContentView(player)
+            val background = (0 until player.childCount).map(player::getChildAt)
+                .filterIsInstance<GradientBlurArtworkView>().single()
+
+            // Simulate layers which were valid before HWUI released its background resources.
+            ReflectionHelpers.setField(background, "imageLayersDirty", false)
+            setWindowVisibility(player, View.GONE)
+            assertFalse(ReflectionHelpers.getField(background, "imageLayersDirty"))
+            setWindowVisibility(player, View.VISIBLE)
+            assertTrue(ReflectionHelpers.getField(background, "imageLayersDirty"))
+        } finally {
+            activityController.pause().stop().destroy()
+        }
+    }
+
+    @Test
     fun dismissStopsHoldingTheDisplayWithoutClearingHostWindowFlags() {
         val activityController = Robolectric.buildActivity(Activity::class.java).setup().visible()
         try {

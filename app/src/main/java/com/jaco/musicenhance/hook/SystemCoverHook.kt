@@ -199,7 +199,7 @@ internal object SystemCoverHook {
         metaData = (metaData?.let(::Bundle) ?: Bundle()).apply {
             putInt(FLIP_SCREEN_META_DATA, FULL_SCREEN)
         }
-        if (isHorizontalPlayerActivityName(name)) {
+        if (isHorizontalPlayerActivityName(packageName, name)) {
             screenOrientation = ActivityInfo.SCREEN_ORIENTATION_BEHIND
         }
     }

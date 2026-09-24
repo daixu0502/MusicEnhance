@@ -86,7 +86,10 @@ internal class GradientBlurArtworkView(context: Context) : FrameLayout(context) 
         if (width <= 0 || height <= 0 || bitmap.width <= 0 || bitmap.height <= 0) return
         if (!canvas.isHardwareAccelerated) return
 
-        if (imageLayersDirty) prepareImageLayers(bitmap)
+        // HWUI may discard a RenderNode's display list while the host application is in the
+        // background. The bitmap itself remains unchanged in that case, so the normal artwork
+        // identity check cannot tell us that the cached blur layers need recording again.
+        if (imageLayersDirty || blurNodes.any { !it.hasDisplayList() }) prepareImageLayers(bitmap)
         if (gradientMasksDirty) prepareGradientMasks()
         for (index in blurNodes.indices) drawBlurLayer(canvas, blurNodes[index], gradientMasks[index])
         maskPaint.shader = null
@@ -142,6 +145,13 @@ internal class GradientBlurArtworkView(context: Context) : FrameLayout(context) 
     override fun onDetachedFromWindow() {
         discardImageLayers()
         super.onDetachedFromWindow()
+    }
+
+    /** Re-record GPU-owned blur layers after the player window returns to the foreground. */
+    fun refreshRendering() {
+        imageLayersDirty = true
+        fullBlurArtworkView.invalidate()
+        invalidate()
     }
 
     private fun discardImageLayers() {

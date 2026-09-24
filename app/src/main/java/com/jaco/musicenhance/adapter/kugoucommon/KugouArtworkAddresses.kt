@@ -1,10 +1,10 @@
-package com.jaco.musicenhance.adapter.kugoulite
+package com.jaco.musicenhance.adapter.kugoucommon
 
 import java.net.URI
 import java.util.Locale
 
 /** Kugou image templates use {size}; only recognised image CDN paths permit size replacement. */
-internal object KugouLiteArtworkAddresses {
+internal object KugouArtworkAddresses {
     // CDN size=0 returns the actual source; fixed large sizes can upscale a small original.
     private val sizesPx = listOf(0, 1080, 720, 480)
     private val knownSizesPx = setOf(0, 100, 120, 150, 160, 200, 240, 300, 320, 360, 400, 480, 500, 600, 640, 720, 750, 800, 960, 1000, 1024, 1080, 1500, 1920, 2048)

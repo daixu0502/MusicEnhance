@@ -1,4 +1,4 @@
-package com.jaco.musicenhance.adapter.kugoulite
+package com.jaco.musicenhance.adapter
 
 import android.os.Handler
 import android.os.Looper
@@ -14,12 +14,12 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34, 35], manifest = Config.NONE)
-class KugouLiteFavoriteControlTest {
+class PolledFavoriteControlTest {
     private val song = PlayerSnapshot.Empty.copy(title = "Song", artist = "Artist")
     private var nowMs = 0L
     private val worker = QueuedWorker()
     private val source = FakeSource()
-    private val control = KugouLiteFavoriteControl({ source }, worker, Handler(Looper.getMainLooper()), { nowMs })
+    private val control = PolledFavoriteControl({ source }, worker, Handler(Looper.getMainLooper()), { nowMs })
 
     @Test fun missingNativeButtonDoesNotPreventDatabaseStateOrConfirmedFavoriteChanges() {
         assertNull(control.read(song).favorite)
@@ -118,17 +118,17 @@ class KugouLiteFavoriteControlTest {
         while (worker.tasks.isNotEmpty()) worker.runNext()
         shadowOf(Looper.getMainLooper()).idle()
     }
-    private class FakeSource : KugouLiteFavoriteControl.Source {
+    private class FakeSource : PolledFavoriteControl.Source {
         var trackKey = "original"
         var favorite = false
         var available = true
         var failure = false
         val dispatched = mutableListOf<Boolean>()
-        override fun read(player: PlayerSnapshot): KugouLiteFavoriteControl.State? {
+        override fun read(player: PlayerSnapshot): PolledFavoriteControl.State? {
             check(!failure) { "Host unavailable" }
-            return if (available) KugouLiteFavoriteControl.State(trackKey, favorite) else null
+            return if (available) PolledFavoriteControl.State(trackKey, favorite) else null
         }
-        override fun toggle(state: KugouLiteFavoriteControl.State): Boolean {
+        override fun toggle(state: PolledFavoriteControl.State): Boolean {
             dispatched += state.favorite
             return true
         }

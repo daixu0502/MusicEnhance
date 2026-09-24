@@ -195,10 +195,10 @@ internal object MusicAppHooks {
 
     private fun shouldBlockHorizontalLaunch(activity: Activity?, intent: Intent?): Boolean {
         if (activity == null || intent == null) return false
-        val targetClass = intent.component?.className ?: runCatching {
-            intent.resolveActivity(activity.packageManager)?.className
+        val target = intent.component ?: runCatching {
+            intent.resolveActivity(activity.packageManager)
         }.getOrNull()
-        if (!isHorizontalPlayerActivityName(targetClass)) return false
+        if (!isHorizontalPlayerActivityName(target?.packageName, target?.className)) return false
         if (!CoverScreenDetector.isCoverScreen(activity)) return false
         moduleInfo("Blocked music app horizontal player launch on cover screen")
         return true

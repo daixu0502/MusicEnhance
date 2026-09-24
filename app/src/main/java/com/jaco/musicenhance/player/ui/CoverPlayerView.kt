@@ -193,7 +193,10 @@ internal class CoverPlayerView(
             handler.removeCallbacks(ticker)
             val active = visibility == VISIBLE && !isClosing
             controller.setActive(active)
-            if (active) handler.post(ticker)
+            if (active) {
+                blurredArtworkView.refreshRendering()
+                handler.post(ticker)
+            }
         }
     }
 

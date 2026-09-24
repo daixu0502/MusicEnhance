@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import com.jaco.musicenhance.adapter.CachedNativeLyricsProvider
 import com.jaco.musicenhance.adapter.MusicPlayerAdapter
 import com.jaco.musicenhance.adapter.nativePlayerSession
+import com.jaco.musicenhance.player.PlayerSession
 import com.jaco.musicenhance.player.artwork.ArtworkDiskCache
 import com.jaco.musicenhance.player.artwork.PlaylistArtworkProvider
 import com.jaco.musicenhance.player.media.MediaSessionStore
@@ -16,8 +17,10 @@ internal object KuwoPlayerAdapter : MusicPlayerAdapter {
         MediaSessionStore.controlReader = KuwoMediaControlSource
         KuwoPlaybackSource.install(loader)
     }
-    override fun createSession(activity: Activity, nativeRoot: ViewGroup) = KuwoPlaybackSource.Reader(activity.classLoader).let { data ->
-        nativePlayerSession(
+    override fun createSession(activity: Activity, nativeRoot: ViewGroup): PlayerSession {
+        val data = KuwoPlaybackSource.Reader(activity.classLoader)
+        val playback = KuwoPlaybackSource(activity.classLoader)
+        val session = nativePlayerSession(
             profile.displayName,
             lyrics = CachedNativeLyricsProvider(data::readLyrics),
             artwork = PlaylistArtworkProvider(
@@ -26,6 +29,10 @@ internal object KuwoPlayerAdapter : MusicPlayerAdapter {
             ),
             readArtwork = { data.readArtwork(nativeRoot) },
             repeatApi = { KuwoRepeatSource(activity.classLoader) },
+        )
+        return session.copy(
+            actions = session.actions.copy(seekAndPlay = { playback.seekAndPlay(it, session.data.snapshot()) }),
+            onRelease = { try { playback.release() } finally { session.onRelease() } },
         )
     }
 }
