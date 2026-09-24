@@ -9,7 +9,6 @@ import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -30,11 +29,8 @@ import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.player.PlayerController
 import com.jaco.musicenhance.player.PlayerSystemBars
 import com.jaco.musicenhance.player.artwork.ArtworkPalette
-import com.jaco.musicenhance.player.artwork.ArtworkDimensions
-import com.jaco.musicenhance.player.artwork.PlayerArtworkState
-import com.jaco.musicenhance.player.artwork.ArtworkTransition
 import com.jaco.musicenhance.player.model.PlayerControlState
-import com.jaco.musicenhance.player.model.PlayerSnapshot
+import com.jaco.musicenhance.player.model.PlayerDisplayState
 import com.jaco.musicenhance.player.model.RepeatMode
 import com.jaco.musicenhance.player.ui.lyrics.LyricsView
 import kotlin.math.max
@@ -55,20 +51,14 @@ internal class CoverPlayerView(
     private val systemBars = PlayerSystemBars(window)
     private val handler = Handler(Looper.getMainLooper())
     private var isSeeking = false
+    private var seekTrackKey = ""
+    private var seekDurationMs = 0L
     private var isClosing = false
-    private val artworkState = PlayerArtworkState()
-    private val artworkTransition = ArtworkTransition()
     private var thumbnailArtwork: Bitmap? = null
     private var thumbnailGeneration = 0
     private var displayedArtwork: Bitmap? = null
     private var displayedArtworkGeneration = 0
-    private var nativeArtwork: Bitmap? = null
-    private var nativeArtworkGeneration = 0
-    private var lastArtworkPollAt = 0L
-    private var lastControlPollAt = 0L
-    private var lastControlState: PlayerControlState? = null
-    private var lastMetadataKey = ""
-    private var currentSnapshot = PlayerSnapshot.Empty
+    private var currentState = PlayerDisplayState()
     private val artworkView = ImageView(context)
     private val blurredArtworkView = GradientBlurArtworkView(context)
     private val backgroundShade = View(context)
@@ -91,7 +81,7 @@ internal class CoverPlayerView(
     private var cameraOnBottom = true
     private var isBackgroundTouch = false
     private val cameraSpectrum = CameraSpectrumView(
-        context, controller::bassLevel, controller::setSpectrumPlaybackActive,
+        context, controller::bassLevel,
     )
     private val infoPanel = LinearLayout(context)
     private val titleView = marqueeText(28f, true, Color.WHITE)
@@ -113,9 +103,7 @@ internal class CoverPlayerView(
     private var lastDisplayRotation = -1
     private var lastLayoutSignature = ""
 
-    private val listener: (PlayerSnapshot) -> Unit = { snapshot ->
-        render(snapshot)
-    }
+    private val listener: (PlayerDisplayState) -> Unit = ::render
     private val ticker = object : Runnable {
         override fun run() {
             val rotation = CoverDisplayGeometry.read(display?.displayId ?: 0)?.rotation
@@ -126,18 +114,7 @@ internal class CoverPlayerView(
             }
             // Display id 0 can change its physical panel without changing View dimensions.
             layoutForDisplay()
-            val now = SystemClock.elapsedRealtime()
-            // Establish the current song before associating a native cover with this frame.
-            if (!isSeeking) render(controller.snapshot())
-            if (now - lastArtworkPollAt >= ARTWORK_POLL_MS) {
-                lastArtworkPollAt = now
-                controller.nativeArtwork()?.let(::acceptNativeArtwork)
-            }
-            if (now - lastControlPollAt >= CONTROL_POLL_MS) {
-                lastControlPollAt = now
-                refreshKeepScreenOn()
-                applyControlState(controller.controlState())
-            }
+            refreshKeepScreenOn()
             handler.postDelayed(this, UI_TICK_MS)
         }
     }
@@ -177,7 +154,7 @@ internal class CoverPlayerView(
         addView(lyricsArtworkView)
         addView(dismissButton)
         applyModeLayout()
-        render(currentSnapshot)
+        render(currentState)
     }
 
     override fun onAttachedToWindow() {
@@ -186,6 +163,7 @@ internal class CoverPlayerView(
         refreshKeepScreenOn()
         systemBars.start()
         controller.addListener(listener)
+        controller.setActive(windowVisibility == VISIBLE)
         handler.post(ticker)
         requestApplyInsets()
     }
@@ -208,6 +186,13 @@ internal class CoverPlayerView(
     override fun onWindowVisibilityChanged(visibility: Int) {
         super.onWindowVisibilityChanged(visibility)
         if (visibility == VISIBLE) refreshKeepScreenOn() else keepScreenOn = false
+        // Base View construction can dispatch this callback before our fields are initialized.
+        if (isAttachedToWindow) {
+            handler.removeCallbacks(ticker)
+            val active = visibility == VISIBLE && !isClosing
+            controller.setActive(active)
+            if (active) handler.post(ticker)
+        }
     }
 
     private fun refreshKeepScreenOn() {
@@ -250,12 +235,15 @@ internal class CoverPlayerView(
     }
 
     private fun configureProgress() {
-        progressView.onTrackingChanged = { isSeeking = it }
-        progressView.onSeekRequested = { fraction ->
-            val target = (currentSnapshot.durationMs * fraction).toLong()
-            if (currentSnapshot.durationMs > 0) {
-                controller.seekTo(target)
+        progressView.onTrackingChanged = { tracking ->
+            isSeeking = tracking
+            if (tracking) {
+                seekTrackKey = currentState.trackKey
+                seekDurationMs = currentState.durationMs
             }
+        }
+        progressView.onSeekRequested = { fraction ->
+            controller.seekTo((seekDurationMs * fraction).toLong(), seekTrackKey)
         }
     }
 
@@ -269,15 +257,12 @@ internal class CoverPlayerView(
             })
         }
         lyricsView.onSeekRequested = { time ->
-            val snapshot = controller.snapshot()
-            if (snapshot.metadataKey == currentSnapshot.metadataKey && snapshot.durationMs > 0) {
-                controller.seekAndPlay(time.coerceIn(0, snapshot.durationMs))
-            }
+            controller.seekAndPlay(time, currentState.trackKey)
         }
         lyricsView.onBackgroundClick = { setLyricsMode(false) }
         lyricsPlayButton.contentDescription = "播放或暂停"
         lyricsPlayButton.setOnClickListener { controller.playPause() }
-        lyricsFavoriteButton.setOnClickListener { toggleFavorite() }
+        lyricsFavoriteButton.setOnClickListener { controller.toggleFavorite() }
         lyricsArtworkView.apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
             background = GradientDrawable().apply { setColor(0xFF444448.toInt()); cornerRadius = dp(12).toFloat() }
@@ -291,7 +276,8 @@ internal class CoverPlayerView(
     private fun setLyricsMode(enabled: Boolean) {
         isLyricsMode = enabled
         modeTransitionAnimator?.cancel()
-        if (enabled) lyricsView.render(controller.lyrics(currentSnapshot), currentSnapshot.positionMs)
+        controller.setLyricsRequested(enabled)
+        if (enabled) lyricsView.render(currentState.lyrics, currentState.positionMs)
         modeTransitionAnimator = ValueAnimator.ofFloat(lyricsTransitionProgress, if (enabled) 1f else 0f).apply {
             duration = MODE_TRANSITION_DURATION_MS
             interpolator = PathInterpolator(0.22f, 0f, 0.2f, 1f)
@@ -320,12 +306,7 @@ internal class CoverPlayerView(
         controlsRow.gravity = Gravity.CENTER
         repeatButton.apply {
             contentDescription = "循环模式"
-            setOnClickListener {
-                val handled = controller.cycleRepeat()
-                if (handled) {
-                    lastControlPollAt = 0L
-                }
-            }
+            setOnClickListener { controller.cycleRepeat() }
         }
         val previous = PlayerControlView(context, PlayerControlView.Kind.PREVIOUS).apply {
             contentDescription = "上一首"
@@ -341,7 +322,7 @@ internal class CoverPlayerView(
         }
         favoriteButton.apply {
             contentDescription = "收藏"
-            setOnClickListener { toggleFavorite() }
+            setOnClickListener { controller.toggleFavorite() }
         }
         listOf(repeatButton, previous, playButton, next, favoriteButton).forEach { button ->
             controlsRow.addView(button, LinearLayout.LayoutParams(0, MATCH_PARENT, 1f).apply {
@@ -515,66 +496,48 @@ internal class CoverPlayerView(
     /** Release foreground-only policies before the outgoing Activity's surface is detached. */
     fun prepareForDismissal() {
         isClosing = true
+        controller.setActive(false)
+        handler.removeCallbacks(ticker)
         keepScreenOn = false
         // This Activity is finishing; showing bars on its outgoing surface causes a flash.
         systemBars.stop(restoreVisibility = false)
     }
 
-    private fun render(snapshot: PlayerSnapshot) {
-        currentSnapshot = snapshot
-        if (artworkState.updateTrack(snapshot)) {
-            artworkTransition.begin(displayedArtwork, SystemClock.elapsedRealtime())
-            nativeArtwork = null
-            nativeArtworkGeneration = 0
-            lastArtworkPollAt = 0L
-        }
-        val metadataKey = snapshot.metadataKey
-        if (metadataKey != lastMetadataKey) {
-            lastMetadataKey = metadataKey
-            lastControlPollAt = 0L
-            favoriteButton.active = false
-            favoriteButton.isEnabled = false
-            lyricsFavoriteButton.active = false
-            lyricsFavoriteButton.isEnabled = false
-        }
-        if (titleView.text.toString() != snapshot.title) titleView.text = snapshot.title
-        if (artistView.text.toString() != snapshot.artist) artistView.text = snapshot.artist
-        if (lyricsTitleView.text.toString() != snapshot.title) lyricsTitleView.text = snapshot.title
-        if (lyricsArtistView.text.toString() != snapshot.artist) lyricsArtistView.text = snapshot.artist
-        playButton.playing = snapshot.isPlaying
-        lyricsPlayButton.playing = snapshot.isPlaying
-        lyricsPlayButton.contentDescription = if (snapshot.isPlaying) "暂停" else "播放"
-        if (isLyricsMode || lyricsTransitionProgress > 0f) lyricsView.render(controller.lyrics(snapshot), snapshot.positionMs)
-        cameraSpectrum.playing = snapshot.isPlaying
+    private fun render(state: PlayerDisplayState) {
+        currentState = state
+        if (titleView.text.toString() != state.title) titleView.text = state.title
+        if (artistView.text.toString() != state.artist) artistView.text = state.artist
+        if (lyricsTitleView.text.toString() != state.title) lyricsTitleView.text = state.title
+        if (lyricsArtistView.text.toString() != state.artist) lyricsArtistView.text = state.artist
+        playButton.playing = state.isPlaying
+        lyricsPlayButton.playing = state.isPlaying
+        lyricsPlayButton.contentDescription = if (state.isPlaying) "暂停" else "播放"
+        if (isLyricsMode || lyricsTransitionProgress > 0f) lyricsView.render(state.lyrics, state.positionMs)
+        cameraSpectrum.playing = state.isPlaying
         if (!isSeeking) {
-            val fraction = if (snapshot.durationMs > 0) snapshot.positionMs.toDouble() / snapshot.durationMs else 0.0
+            val fraction = if (state.durationMs > 0) state.positionMs.toDouble() / state.durationMs else 0.0
             progressView.fraction = fraction.toFloat().coerceIn(0f, 1f)
         }
-        progressView.isEnabled = snapshot.durationMs > 0
+        progressView.isEnabled = state.durationMs > 0
 
-        renderArtwork(snapshot)
+        applyControlState(state.controls)
+        renderArtwork(state)
     }
 
-    private fun renderArtwork(snapshot: PlayerSnapshot) {
-        val verifiedArtwork = controller.verifiedArtwork(snapshot)
-        val selectedArtwork = artworkState.select(verifiedArtwork, snapshot.artwork, nativeArtwork)
+    private fun renderArtwork(state: PlayerDisplayState) {
+        val selectedArtwork = state.thumbnail
         val selectedGeneration = selectedArtwork?.generationId ?: 0
         if (thumbnailArtwork !== selectedArtwork || thumbnailGeneration != selectedGeneration) {
             thumbnailArtwork = selectedArtwork
             thumbnailGeneration = selectedGeneration
             lyricsArtworkView.setImageBitmap(selectedArtwork)
         }
-        val currentArtworkReady = verifiedArtwork?.isRecycled == false ||
-            (!controller.holdPreviousArtworkWhileLoading && selectedArtwork != null)
-        val artwork = artworkTransition.background(
-            selectedArtwork, currentArtworkReady, SystemClock.elapsedRealtime(),
-        )
+        val artwork = state.artwork
         val generation = artwork?.generationId ?: 0
         if (displayedArtwork !== artwork || displayedArtworkGeneration != generation) {
             displayedArtwork = artwork
             displayedArtworkGeneration = generation
             if (artwork != null) {
-                moduleInfo("Player artwork selected: ${artwork.width}x${artwork.height}, verified=${artwork === verifiedArtwork}")
                 artworkView.setImageBitmap(artwork)
                 blurredArtworkView.artwork = artwork
                 cameraSpectrum.spectrumColor = ArtworkPalette.spectrumColor(artwork)
@@ -591,35 +554,18 @@ internal class CoverPlayerView(
         }
     }
 
-    private fun acceptNativeArtwork(bitmap: Bitmap) {
-        if (bitmap.isRecycled) return
-        if (!ArtworkDimensions.isUsable(bitmap.width, bitmap.height)) return
-        val generation = bitmap.generationId
-        if (nativeArtwork === bitmap && nativeArtworkGeneration == generation) return
-        nativeArtwork = bitmap
-        nativeArtworkGeneration = generation
-        moduleInfo("Using ${controller.appName} native artwork: ${bitmap.width}x${bitmap.height}")
-        render(currentSnapshot)
-    }
-
-    private fun toggleFavorite() {
-        if (controller.toggleFavorite()) lastControlPollAt = 0L
-    }
-
     private fun applyControlState(state: PlayerControlState) {
-        if (state != lastControlState) {
-            lastControlState = state
-            moduleInfo("${controller.appName} native controls: repeat=${state.repeatMode}, favorite=${state.favorite}")
-        }
-        val favorite = state.favorite.takeIf { state.songTitle == currentSnapshot.title }
-        favoriteButton.isEnabled = favorite != null
-        favoriteButton.contentDescription = when (favorite) {
+        val favorite = state.favorite
+        favoriteButton.pending = state.favoritePending
+        favoriteButton.isEnabled = favorite != null && !state.favoritePending
+        favoriteButton.contentDescription = if (state.favoritePending) "正在更新喜欢状态" else when (favorite) {
             true -> "取消喜欢"
             false -> "喜欢"
             null -> "正在读取喜欢状态"
         }
-        favorite?.let { favoriteButton.active = it }
+        favoriteButton.active = favorite == true
         lyricsFavoriteButton.isEnabled = favoriteButton.isEnabled
+        lyricsFavoriteButton.pending = state.favoritePending
         lyricsFavoriteButton.active = favoriteButton.active
         lyricsFavoriteButton.contentDescription = favoriteButton.contentDescription
         repeatButton.repeatMode = state.repeatMode
@@ -668,8 +614,6 @@ internal class CoverPlayerView(
         const val MATCH_PARENT = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP_CONTENT = ViewGroup.LayoutParams.WRAP_CONTENT
         const val UI_TICK_MS = 50L
-        const val ARTWORK_POLL_MS = 1_500L
-        const val CONTROL_POLL_MS = 200L
         const val MODE_TRANSITION_DURATION_MS = 500L
     }
 }

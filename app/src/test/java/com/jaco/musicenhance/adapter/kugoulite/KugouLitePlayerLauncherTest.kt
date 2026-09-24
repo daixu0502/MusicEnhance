@@ -23,7 +23,7 @@ class KugouLitePlayerLauncherTest {
             repeat(4) { assertTrue(launcher.launch(source.get())) }
             assertEquals(1, intents.size)
             val intent = intents.single()
-            assertEquals(KugouLiteMusicProfile.packageName, intent.component?.packageName)
+            assertEquals(KugouLitePlayerProfile.packageName, intent.component?.packageName)
             assertEquals(KugouLitePlayerLauncher.ACTIVITY_NAME, intent.component?.className)
             assertEquals(0, intent.flags) // Don't clear/rebuild the host's task or navigate home again.
             source.get().intent = intent
@@ -33,7 +33,7 @@ class KugouLitePlayerLauncherTest {
 
     @Test fun nativeLaunchDoesNotAcquireModuleOnlyWindowPolicies() {
         Robolectric.buildActivity(Activity::class.java).setup().use { controller ->
-            controller.get().intent = Intent().setClassName(KugouLiteMusicProfile.packageName, KugouLitePlayerLauncher.ACTIVITY_NAME)
+            controller.get().intent = Intent().setClassName(KugouLitePlayerProfile.packageName, KugouLitePlayerLauncher.ACTIVITY_NAME)
             assertFalse(KugouLitePlayerLauncher.isModuleLaunch(controller.get()))
         }
     }

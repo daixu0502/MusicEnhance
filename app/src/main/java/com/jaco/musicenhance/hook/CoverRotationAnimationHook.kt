@@ -45,12 +45,14 @@ internal object CoverRotationAnimationHook {
                     val end = endRotation.invoke(change) as Int
                     val before = startBounds.invoke(change) as Rect
                     val after = endBounds.invoke(change) as Rect
-                    val top = (changes.invoke(info) as List<*>).firstNotNullOfOrNull {
-                        (taskInfo.invoke(it) as? ActivityManager.RunningTaskInfo)?.topActivity
+                    val topTask = (changes.invoke(info) as List<*>).firstNotNullOfOrNull {
+                        (taskInfo.invoke(it) as? ActivityManager.RunningTaskInfo)?.takeIf { task -> task.topActivity != null }
                     }
+                    val top = topTask?.topActivity
                     val profile = MusicAppRegistry.find(top?.packageName) ?: return@runCatching null
                     if (!CoverRotationPolicy.matches(start, end, before.width(), before.height(),
-                            after.width(), after.height(), top?.packageName, top?.className) || !hookEnabled(profile)
+                            after.width(), after.height(), top?.packageName, top?.className,
+                            isEnhancedTask(topTask)) || !hookEnabled(profile)
                     ) return@runCatching null
                     if (start == 0) 180f else -180f
                 }.getOrNull()
@@ -122,6 +124,11 @@ internal object CoverRotationAnimationHook {
 
     private class CoverAnimation : AnimationSet(false)
 
+    private fun isEnhancedTask(task: ActivityManager.RunningTaskInfo?): Boolean = runCatching {
+        val info = task?.javaClass?.getField("topActivityInfo")?.get(task) as? android.content.pm.ActivityInfo
+        info?.metaData?.getBoolean(com.jaco.musicenhance.player.PlayerActivitySessions.OWNED_ACTIVITY_METADATA) == true
+    }.getOrDefault(false)
+
     private fun createAnimation(degrees: Float, enter: Boolean): Animation = CoverAnimation().apply {
         addAnimation(RotateAnimation(
             if (enter) degrees else 0f,
@@ -152,12 +159,13 @@ internal object CoverRotationAnimationHook {
 
 internal object CoverRotationPolicy {
     fun matches(start: Int, end: Int, startW: Int, startH: Int, endW: Int, endH: Int,
-                packageName: String?, activityName: String?): Boolean {
+                packageName: String?, activityName: String?, enhancedActivity: Boolean = false): Boolean {
         fun cover(w: Int, h: Int) = min(w, h) > 0 && min(w, h).toFloat() / max(w, h) >= 0.60f
         return start in setOf(0, 2) && end in setOf(0, 2) && start != end &&
             cover(startW, startH) && cover(endW, endH) &&
             MusicAppRegistry.find(packageName)?.let {
-                it.isPlayerActivity(activityName) && !it.isHorizontalPlayerActivity(activityName)
+                (enhancedActivity && it.ownsActivity(activityName)) ||
+                    (it.isPlayerActivity(activityName) && !it.isHorizontalPlayerActivity(activityName))
             } == true
     }
 }

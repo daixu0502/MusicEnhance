@@ -4,7 +4,7 @@ import android.view.Window
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 
-/** Establish immersive mode once. App-specific hooks prevent native code from undoing it. */
+/** Establish immersive mode in the common player Activity; host code owns a different window. */
 internal class PlayerSystemBars(private val window: Window) {
     private data class OriginalBars(
         val behavior: Int,

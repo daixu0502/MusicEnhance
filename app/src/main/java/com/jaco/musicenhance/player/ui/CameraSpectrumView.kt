@@ -20,7 +20,6 @@ import kotlin.math.pow
 internal class CameraSpectrumView(
     context: Context,
     private val bassLevel: () -> Float,
-    private val onPlaybackChanged: (Boolean) -> Unit,
 ) : View(context) {
     private val handler = Handler(Looper.getMainLooper())
     private val gapPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
@@ -34,7 +33,6 @@ internal class CameraSpectrumView(
         set(value) {
             if (field == value) return
             field = value
-            onPlaybackChanged(value)
             if (!value) {
                 pauseRelease.start(smoothBass, SystemClock.elapsedRealtime())
             }

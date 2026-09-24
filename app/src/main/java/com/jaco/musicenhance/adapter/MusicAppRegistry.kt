@@ -1,13 +1,13 @@
 package com.jaco.musicenhance.adapter
 
-import com.jaco.musicenhance.adapter.qq.QQMusicProfile
-import com.jaco.musicenhance.adapter.apple.AppleMusicProfile
-import com.jaco.musicenhance.adapter.kugoulite.KugouLiteMusicProfile
-import com.jaco.musicenhance.adapter.kuwo.KuwoMusicProfile
+import com.jaco.musicenhance.adapter.qq.QQPlayerProfile
+import com.jaco.musicenhance.adapter.apple.ApplePlayerProfile
+import com.jaco.musicenhance.adapter.kugoulite.KugouLitePlayerProfile
+import com.jaco.musicenhance.adapter.kuwo.KuwoPlayerProfile
 
 /** Only explicitly registered packages receive hooks; unknown music apps remain untouched. */
 internal object MusicAppRegistry {
-    val profiles: List<MusicAppProfile> = listOf(QQMusicProfile, AppleMusicProfile, KugouLiteMusicProfile, KuwoMusicProfile)
+    val profiles: List<MusicAppProfile> = listOf(QQPlayerProfile, ApplePlayerProfile, KugouLitePlayerProfile, KuwoPlayerProfile)
 
     fun find(packageName: String?): MusicAppProfile? = profiles.firstOrNull { it.packageName == packageName }
 

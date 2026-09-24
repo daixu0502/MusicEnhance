@@ -1,6 +1,7 @@
 package com.jaco.musicenhance.player.ui
 
 import android.annotation.SuppressLint
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -8,6 +9,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.view.MotionEvent
 import android.view.View
+import android.view.animation.LinearInterpolator
 import com.jaco.musicenhance.player.model.RepeatMode
 import kotlin.math.min
 
@@ -17,6 +19,15 @@ internal class PlayerControlView(
     private val kind: Kind,
 ) : View(context) {
     enum class Kind { REPEAT, PREVIOUS, PLAY_PAUSE, NEXT, FAVORITE, DISMISS }
+    private var pendingAnimator: ValueAnimator? = null
+    private var pendingPhase = 0f
+    var pending: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            updatePendingAnimation()
+            invalidate()
+        }
 
     var playing: Boolean = false
         set(value) {
@@ -72,10 +83,49 @@ internal class PlayerControlView(
             Kind.FAVORITE -> drawHeart(canvas)
             Kind.DISMISS -> drawDismiss(canvas)
         }
+        if (pending) {
+            paint.style = Paint.Style.STROKE
+            paint.color = Color.WHITE
+            paint.alpha = 220
+            paint.strokeWidth = 1.1f
+            canvas.drawArc(0.5f, 0.5f, 23.5f, 23.5f, pendingPhase * 360f - 90f, 90f, false, paint)
+        }
         canvas.restoreToCount(checkpoint)
     }
 
+    private fun updatePendingAnimation() {
+        if (!pending || !isAttachedToWindow || !isShown || windowVisibility != VISIBLE) {
+            pendingAnimator?.cancel()
+            pendingAnimator = null
+            return
+        }
+        if (pendingAnimator != null) return
+        pendingAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 900L
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { pendingPhase = it.animatedValue as Float; invalidate() }
+            start()
+        }
+    }
+
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); updatePendingAnimation() }
+    override fun onDetachedFromWindow() {
+        pendingAnimator?.cancel()
+        pendingAnimator = null
+        super.onDetachedFromWindow()
+    }
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        updatePendingAnimation()
+    }
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        updatePendingAnimation()
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (pending) return true
         if (!isEnabled) return false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -100,6 +150,7 @@ internal class PlayerControlView(
     }
 
     override fun performClick(): Boolean {
+        if (pending) return false
         super.performClick()
         return true
     }

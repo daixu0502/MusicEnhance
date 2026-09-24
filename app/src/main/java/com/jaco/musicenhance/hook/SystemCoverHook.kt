@@ -19,7 +19,7 @@ internal object SystemCoverHook {
     private const val WATCH_OVERLAY_PROPERTY = "miui.supportFlipWatchOverlayGroupView"
     private const val FULL_SCREEN = 0
     private const val LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS = 3
-    private val embeddedOriginalInfo = WeakHashMap<Any, ActivityInfo>()
+    private val enhancedOriginalInfo = WeakHashMap<Any, ActivityInfo>()
 
     fun install(classLoader: ClassLoader) {
         SystemCoverWidgetHook.install(classLoader)
@@ -106,8 +106,8 @@ internal object SystemCoverHook {
 
     /** Forces Music app out of HyperOS' narrow watch-overlay compatibility window. */
     private fun installFullScreenHooks(classLoader: ClassLoader) {
-        safeHook("embedded player window configuration") { installEmbeddedRelayoutHook(classLoader) }
-        safeHook("embedded player window cleanup") { installEmbeddedRemovalHook(classLoader) }
+        safeHook("enhanced player window configuration") { installPlayerRelayoutHook(classLoader) }
+        safeHook("enhanced player window cleanup") { installPlayerRemovalHook(classLoader) }
         safeHook("Music app activity full-screen metadata") {
             val packageManager = classLoader.loadClass("com.android.server.pm.IPackageManagerBase")
             module.installHook(
@@ -152,7 +152,7 @@ internal object SystemCoverHook {
                     val profile = enabledProfile(packageName)
                     if (property == WATCH_OVERLAY_PROPERTY && profile != null) {
                         when {
-                            isEmbeddedComponentActive(profile, className, userId) -> constructor.newInstance(property, false, packageName, className)
+                            isEnhancedComponentActive(profile, className, userId) -> constructor.newInstance(property, false, packageName, className)
                             profile.isHomeActivity(className) -> constructor.newInstance(property, true, packageName, className)
                             profile.isPlayerActivity(className) -> constructor.newInstance(property, false, packageName, className)
                             else -> chain.proceed()
@@ -174,7 +174,7 @@ internal object SystemCoverHook {
                     val profile = enabledProfile(packageName)
                     if (
                         profile?.isPlayerActivity(activityInfo?.name) == true ||
-                        synchronized(embeddedOriginalInfo) { embeddedOriginalInfo.containsKey(owner) }
+                        synchronized(enhancedOriginalInfo) { enhancedOriginalInfo.containsKey(owner) }
                     ) false else chain.proceed()
                 },
             )
@@ -218,15 +218,15 @@ internal object SystemCoverHook {
     }
 
     /** A title change alone doesn't invalidate HyperOS' cached ActivityRecord configuration. */
-    private fun installEmbeddedRelayoutHook(loader: ClassLoader) {
+    private fun installPlayerRelayoutHook(loader: ClassLoader) {
         val service = loader.loadClass("com.android.server.wm.WindowManagerService")
         service.declaredMethods.filter { it.name == "relayoutWindow" }.forEachIndexed { index, method ->
-            module.installHook(method, "musicenhance.embedded.relayout.$index", Hooker { chain ->
+            module.installHook(method, "musicenhance.player.relayout.$index", Hooker { chain ->
                 var changedOwner: ActivityInfo? = null
                 val attrs = chain.args.filterIsInstance<WindowManager.LayoutParams>().firstOrNull()
                 val profile = attrs?.packageName?.let(MusicAppRegistry::find)
-                if (profile != null && profile.embeddedPlayerActivityNames.isNotEmpty()) {
-                    safeHook("embedded player bounds refresh") {
+                if (profile != null) {
+                    safeHook("enhanced player bounds refresh") {
                         val manager = chain.thisObject ?: return@safeHook
                         val lock = fieldValue(manager, "mGlobalLock") ?: return@safeHook
                         val callingIdentity = android.os.Binder.clearCallingIdentity()
@@ -236,15 +236,22 @@ internal object SystemCoverHook {
                                 val window = resolveRelayoutWindow(chain.args, windows) ?: return@synchronized
                                 val owner = fieldValue(window, "mActivityRecord") ?: return@synchronized
                                 val info = fieldValue(owner, "info") as? ActivityInfo ?: return@synchronized
-                                if (info.packageName != profile.packageName || info.name !in profile.embeddedPlayerActivityNames) return@synchronized
-                                val active = hookEnabled(profile) && profile.isEmbeddedPlayerWindow(attrs.title?.toString())
-                                if (active == synchronized(embeddedOriginalInfo) { embeddedOriginalInfo.containsKey(owner) }) return@synchronized
+                                if (info.packageName != profile.packageName || !profile.ownsActivity(info.name)) return@synchronized
+                                val active = hookEnabled(profile) && profile.isEnhancedPlayerWindow(attrs.title?.toString())
+                                if (active == synchronized(enhancedOriginalInfo) { enhancedOriginalInfo.containsKey(owner) }) return@synchronized
                                 val infoField = owner.javaClass.getDeclaredField("info").apply { isAccessible = true }
                                 if (active) {
-                                    infoField.set(owner, ActivityInfo(info).apply { applyFullScreenMetadata() })
-                                    synchronized(embeddedOriginalInfo) { embeddedOriginalInfo[owner] = info }
+                                    infoField.set(owner, ActivityInfo(info).apply {
+                                        applyFullScreenMetadata()
+                                        metaData.putBoolean(com.jaco.musicenhance.player.PlayerActivitySessions.OWNED_ACTIVITY_METADATA, true)
+                                        // Our Activity handles rotation/fold changes without losing lyric/UI state.
+                                        configChanges = configChanges or ActivityInfo.CONFIG_ORIENTATION or
+                                            ActivityInfo.CONFIG_SCREEN_SIZE or ActivityInfo.CONFIG_SMALLEST_SCREEN_SIZE or
+                                            ActivityInfo.CONFIG_SCREEN_LAYOUT or ActivityInfo.CONFIG_KEYBOARD_HIDDEN
+                                    })
+                                    synchronized(enhancedOriginalInfo) { enhancedOriginalInfo[owner] = info }
                                 } else {
-                                    infoField.set(owner, synchronized(embeddedOriginalInfo) { embeddedOriginalInfo.remove(owner) } ?: return@synchronized)
+                                    infoField.set(owner, synchronized(enhancedOriginalInfo) { enhancedOriginalInfo.remove(owner) } ?: return@synchronized)
                                 }
                                 changedOwner = info
                                 // Recompute only on ownership transitions, never on every frame/relayout.
@@ -252,7 +259,7 @@ internal object SystemCoverHook {
                                 findMethod(owner, "ensureActivityConfiguration", 2)?.takeIf {
                                     it.parameterTypes.contentEquals(arrayOf(Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType))
                                 }?.invoke(owner, 0, true)
-                                moduleInfo("Embedded player bounds ownership=$active; app=${profile.packageName}")
+                                moduleInfo("Enhanced player bounds ownership=$active; app=${profile.packageName}")
                             }
                         } finally {
                             android.os.Binder.restoreCallingIdentity(callingIdentity)
@@ -271,16 +278,16 @@ internal object SystemCoverHook {
     }
 
     /** A killed process may never send the relayout that restores its original window title. */
-    private fun installEmbeddedRemovalHook(loader: ClassLoader) {
+    private fun installPlayerRemovalHook(loader: ClassLoader) {
         val windowState = loader.loadClass("com.android.server.wm.WindowState")
-        module.installHook(windowState.getDeclaredMethod("removeImmediately"), "musicenhance.embedded.remove", Hooker { chain ->
+        module.installHook(windowState.getDeclaredMethod("removeImmediately"), "musicenhance.player.remove", Hooker { chain ->
             val window = chain.thisObject
             val owner = fieldValue(window, "mActivityRecord")
             val attrs = fieldValue(window, "mAttrs") as? WindowManager.LayoutParams
-            val embedded = MusicAppRegistry.find(attrs?.packageName)?.isEmbeddedPlayerWindow(attrs?.title?.toString()) == true
+            val enhanced = MusicAppRegistry.find(attrs?.packageName)?.isEnhancedPlayerWindow(attrs?.title?.toString()) == true
             val result = chain.proceed()
-            if (embedded && owner != null) safeHook("embedded player ownership cleanup") {
-                val original = synchronized(embeddedOriginalInfo) { embeddedOriginalInfo.remove(owner) } ?: return@safeHook
+            if (enhanced && owner != null) safeHook("enhanced player ownership cleanup") {
+                val original = synchronized(enhancedOriginalInfo) { enhancedOriginalInfo.remove(owner) } ?: return@safeHook
                 owner.javaClass.getDeclaredField("info").apply { isAccessible = true }.set(owner, original)
                 SystemCoverWidgetHook.notifyOwnershipChanged(ComponentName(original.packageName, original.name), original.applicationInfo.uid)
             }
@@ -310,9 +317,9 @@ internal object SystemCoverHook {
         return null
     }
 
-    private fun isEmbeddedComponentActive(profile: MusicAppProfile, className: String?, userId: Int?): Boolean {
-        if (className !in profile.embeddedPlayerActivityNames) return false
-        val owners = synchronized(embeddedOriginalInfo) { embeddedOriginalInfo.keys.toList() }
+    private fun isEnhancedComponentActive(profile: MusicAppProfile, className: String?, userId: Int?): Boolean {
+        if (!profile.ownsActivity(className)) return false
+        val owners = synchronized(enhancedOriginalInfo) { enhancedOriginalInfo.keys.toList() }
         return owners.any { owner ->
             val info = fieldValue(owner, "info") as? ActivityInfo
             info?.packageName == profile.packageName && info.name == className &&

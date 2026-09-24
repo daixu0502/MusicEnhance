@@ -23,4 +23,12 @@ class CoverRotationPolicyTest {
         assertFalse(CoverRotationPolicy.matches(0, 1, 1208, 1392, 1392, 1208, "com.tencent.qqmusic", player))
         assertFalse(CoverRotationPolicy.matches(0, 0, 1208, 1392, 1208, 1392, "com.tencent.qqmusic", player))
     }
+
+    @Test fun sharedActivitySlotUsesOwnershipWithoutChangingNativeSettingsRotation() {
+        val slot = "com.apple.android.music.common.activity.StaticHtmlActivity"
+        assertFalse(CoverRotationPolicy.matches(0, 2, 1208, 1392, 1208, 1392, "com.apple.android.music", slot))
+        assertTrue(CoverRotationPolicy.matches(0, 2, 1208, 1392, 1208, 1392, "com.apple.android.music", slot, true))
+        assertFalse(CoverRotationPolicy.matches(0, 1, 1208, 1392, 1392, 1208, "com.apple.android.music", slot, true))
+        assertFalse(CoverRotationPolicy.matches(0, 2, 1208, 1392, 1208, 1392, "com.example", slot, true))
+    }
 }

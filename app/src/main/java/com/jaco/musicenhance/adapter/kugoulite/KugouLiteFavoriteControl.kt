@@ -1,39 +1,125 @@
 package com.jaco.musicenhance.adapter.kugoulite
 
-import android.view.ViewGroup
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import com.jaco.musicenhance.adapter.NativeFavoriteControl
-import com.jaco.musicenhance.adapter.NativePlayerViews
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.player.model.PlayerControlState
 import com.jaco.musicenhance.player.model.PlayerSnapshot
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
-internal class KugouLiteFavoriteControl(private val root: ViewGroup, private val stateTagId: Int) : NativeFavoriteControl {
-    // 5.2.9 uses this state tag in both the fragment and land.base.d's SongFavDelegate callback.
-    constructor(root: ViewGroup, loader: ClassLoader) : this(root, resolveStateTagId(root, loader))
-
-    private fun button() = if (stateTagId == 0) null else NativePlayerViews.find(root) {
-        it.getTag(stateTagId) is Boolean && it.isClickable && it.isEnabled
+/** Owns favorite reads and pending actions; never infers success from a click or flips state locally. */
+internal class KugouLiteFavoriteControl(
+    createSource: () -> Source,
+    private val worker: ExecutorService = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "MusicEnhance-kugoulite-favorite").apply { isDaemon = true }
+    },
+    private val mainHandler: Handler = Handler(Looper.getMainLooper()),
+    private val nowMs: () -> Long = SystemClock::elapsedRealtime,
+) : NativeFavoriteControl {
+    data class State(val trackKey: String, val favorite: Boolean)
+    interface Source {
+        fun read(player: PlayerSnapshot): State?
+        fun toggle(state: State): Boolean
+    }
+    private class Request(val player: PlayerSnapshot) {
+        var state: State? = null
+        var nextReadAtMs = 0L
+        var mutationPending = false
+        var expectedFavorite: Boolean? = null
+        var mutationExpiresAtMs = Long.MAX_VALUE
+        var failureReported = false
     }
 
-    override fun read(player: PlayerSnapshot) = PlayerControlState(
-        favorite = button()?.getTag(stateTagId) as? Boolean,
-        songTitle = player.title,
-    )
+    private val source by lazy(createSource)
+    @Volatile private var released = false
+    @Volatile private var request: Request? = null
+    private var readPending = false
 
-    override fun toggle(player: PlayerSnapshot): Boolean = button()?.performClick() ?: false
+    private fun requestFor(player: PlayerSnapshot): Request = request?.takeIf {
+        it.player.metadataKey == player.metadataKey
+    } ?: Request(player).also { request = it }
 
-    companion object {
-        @Suppress("DiscouragedApi")
-        private fun resolveStateTagId(root: ViewGroup, loader: ClassLoader): Int {
-            // APK resource names are shortened (id/a, id/b...). The host's R field still holds
-            // the correct number; getIdentifier with the uncompressed name returns zero.
-            val nativeId = runCatching { loader.loadClass("ml.h").getField("kg_player_song_like_button").getInt(null) }
-                .getOrDefault(0)
-            val resolved = if (nativeId != 0) nativeId else root.resources.getIdentifier(
-                "kg_player_song_like_button", "id", KugouLiteMusicProfile.packageName,
-            )
-            moduleInfo("Kugou Lite favorite state tag resolved=${resolved != 0}")
-            return resolved
+    override fun read(player: PlayerSnapshot): PlayerControlState {
+        if (released) return PlayerControlState()
+        val current = requestFor(player)
+        if (current.mutationPending && nowMs() >= current.mutationExpiresAtMs) {
+            current.mutationPending = false
+            current.expectedFavorite = null
+            moduleInfo("Kugou Lite favorite: confirmation timeout; retaining native state")
         }
+        if (!readPending && nowMs() >= current.nextReadAtMs) readNativeState(current)
+        return PlayerControlState(favorite = current.state?.favorite, songTitle = player.title)
+    }
+
+    private fun readNativeState(current: Request) {
+        readPending = true
+        worker.execute {
+            if (released) return@execute
+            val result = runCatching { source.read(current.player) }
+            mainHandler.post {
+                readPending = false
+                if (released || request !== current) return@post
+                current.state = result.getOrNull()
+                if (current.state?.favorite == current.expectedFavorite && current.expectedFavorite != null) {
+                    current.mutationPending = false
+                    current.expectedFavorite = null
+                    moduleInfo("Kugou Lite favorite: native state confirmed")
+                }
+                reportFailure(current, result.exceptionOrNull())
+                current.nextReadAtMs = nowMs() + if (current.mutationPending) CONFIRM_POLL_MS else STATE_POLL_MS
+            }
+        }
+    }
+
+    override fun toggle(player: PlayerSnapshot): Boolean {
+        if (released) return false
+        val current = requestFor(player)
+        val displayed = current.state ?: return false
+        if (current.mutationPending) return false
+        current.mutationPending = true
+        // Re-read before dispatching: host-side favorites may have changed since the last poll.
+        worker.execute {
+            if (released || request !== current) return@execute
+            val result = runCatching { source.read(player) }
+            mainHandler.post {
+                if (released || request !== current) return@post
+                val fresh = result.getOrNull()?.takeIf { it.trackKey == displayed.trackKey }
+                val dispatched = runCatching { fresh != null && source.toggle(fresh) }
+                if (dispatched.getOrDefault(false)) {
+                    current.expectedFavorite = !fresh!!.favorite
+                    current.mutationExpiresAtMs = nowMs() + CONFIRM_TIMEOUT_MS
+                    moduleInfo("Kugou Lite favorite: native action dispatched")
+                } else {
+                    current.mutationPending = false
+                    moduleInfo("Kugou Lite favorite: native action unavailable or song changed")
+                }
+                reportFailure(current, result.exceptionOrNull() ?: dispatched.exceptionOrNull())
+                current.nextReadAtMs = 0L
+            }
+        }
+        return true
+    }
+
+    private fun reportFailure(current: Request, error: Throwable?) {
+        if (error == null || current.failureReported) return
+        current.failureReported = true
+        moduleInfo("Kugou Lite favorite failed: ${error.cause ?: error}")
+    }
+
+    override fun release() {
+        if (released) return
+        released = true
+        request = null
+        mainHandler.removeCallbacksAndMessages(null)
+        worker.shutdownNow()
+    }
+
+    private companion object {
+        const val STATE_POLL_MS = 500L
+        const val CONFIRM_POLL_MS = 200L
+        const val CONFIRM_TIMEOUT_MS = 4_000L
     }
 }

@@ -7,4 +7,5 @@ internal data class PlayerControlState(
     val repeatMode: RepeatMode = RepeatMode.UNKNOWN,
     val favorite: Boolean? = null,
     val songTitle: String? = null,
+    val favoritePending: Boolean = false,
 )

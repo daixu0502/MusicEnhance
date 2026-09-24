@@ -2,12 +2,10 @@ package com.jaco.musicenhance.adapter.apple
 
 import android.app.Application
 import android.os.SystemClock
-import android.text.Html
 import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.hook.safeHook
 import com.jaco.musicenhance.player.lyrics.LyricsProvider
-import com.jaco.musicenhance.player.model.LyricLine
 import com.jaco.musicenhance.player.model.LyricsSnapshot
 import com.jaco.musicenhance.player.model.LyricsStatus
 import com.jaco.musicenhance.player.model.PlayerSnapshot
@@ -15,7 +13,10 @@ import io.github.libxposed.api.XposedInterface.Hooker
 import java.util.WeakHashMap
 
 /** Owns a native lyrics ViewModel so loading doesn't require opening Apple's lyrics tab. */
-internal class AppleLyricsProvider(private val application: Application) : LyricsProvider {
+internal class AppleLyricsProvider(
+    private val application: Application,
+    private val currentItem: (PlayerSnapshot) -> Any?,
+) : LyricsProvider {
     private var viewModel: Any? = null
     private var expectedKey = ""
     private var metadataKey = ""
@@ -25,6 +26,7 @@ internal class AppleLyricsProvider(private val application: Application) : Lyric
     override fun snapshot(player: PlayerSnapshot): LyricsSnapshot {
         val nowMs = SystemClock.elapsedRealtime()
         if (metadataKey != player.metadataKey) {
+            clearViewModel()
             expectedKey = ""
             metadataKey = player.metadataKey
             nextCheckAtMs = 0
@@ -32,7 +34,7 @@ internal class AppleLyricsProvider(private val application: Application) : Lyric
         if (nowMs >= nextCheckAtMs) {
             nextCheckAtMs = nowMs + 500
             runCatching {
-                val item = AppleNativePlayer.item(player) ?: return@runCatching
+                val item = currentItem(player) ?: return@runCatching
                 val id = item.javaClass.getMethod("getId").invoke(item)?.toString() ?: return@runCatching
                 val queueId = (item.javaClass.getMethod("getQueueId").invoke(item) as Number).toLong()
                 val key = "$id:$queueId\u0000${player.metadataKey}"
@@ -106,7 +108,7 @@ internal class AppleLyricsProvider(private val application: Application) : Lyric
                         (song.call("getQueueId") as? Number)?.toLong() != request.queueId) return@safeHook
                     // Copy synchronously while the host holds the shared native pointer alive.
                     // No native pointers escape to a worker or a later render frame.
-                    val lines = copyLines(song)
+                    val lines = AppleLyricsSource.copyLines(song)
                     moduleInfo("Apple Music lyrics copied: lines=${lines.size}")
                     synchronized(requests) {
                         if (requests[model] === request && model != null) requests[model] = request.copy(
@@ -121,28 +123,6 @@ internal class AppleLyricsProvider(private val application: Application) : Lyric
             })
         }
 
-        private fun copyLines(song: Any): List<LyricLine> {
-            val sections = song.call("getSections") ?: return emptyList()
-            val output = ArrayList<LyricLine>()
-            for (sectionPointer in sections.vectorItems()) {
-                val section = sectionPointer.call("get") ?: continue
-                val lines = section.call("getLines") ?: continue
-                for (linePointer in lines.vectorItems()) {
-                    val line = linePointer.call("get") ?: continue
-                    val startMs = (line.call("getBegin") as? Number)?.toLong() ?: continue
-                    val text = Html.fromHtml(line.call("getHtmlLineText") as? String ?: "", Html.FROM_HTML_MODE_LEGACY).toString().trim()
-                    if (startMs >= 0 && text.isNotBlank()) output += LyricLine(startMs, text)
-                    if (output.size >= 2_000) return output.sortedBy { it.startMs }
-                }
-            }
-            return output.sortedBy { it.startMs }
-        }
-
         private fun Any.call(name: String): Any? = javaClass.getMethod(name).invoke(this)
-        private fun Any.vectorItems(): List<Any> {
-            val size = (call("size") as Number).toLong().coerceIn(0, 2_000)
-            val get = javaClass.getMethod("get", Long::class.javaPrimitiveType)
-            return (0L until size).mapNotNull { get.invoke(this, it) }
-        }
     }
 }
