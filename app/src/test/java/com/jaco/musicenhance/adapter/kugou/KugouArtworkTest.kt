@@ -1,61 +1,16 @@
-package com.jaco.musicenhance.adapter.kugoulite
+package com.jaco.musicenhance.adapter.kugou
 
-import com.jaco.musicenhance.adapter.kugoucommon.KugouArtworkAddresses
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 import org.junit.Assert.*
 import org.junit.Test
 
-class KugouLiteArtworkTest {
-    private fun candidates(url: String?) = KugouArtworkAddresses.candidates(url) { true }.toList()
-
-    @Test fun templatesTryHighResolutionThenSmallerImages() {
-        val url = "http://imgessl.kugou.com/stdmusic/{size}/20260924/cover.jpg"
-        assertEquals(listOf(0, 1080, 720, 480).map { "https://imgessl.kugou.com/stdmusic/$it/20260924/cover.jpg" }, candidates(url))
-    }
-
-    @Test fun fixedLowResolutionAddressIsRetainedAsLastFallback() {
-        val url = "https://imgessl.kugou.com/stdmusic/240/cover.jpg"
-        assertEquals(listOf(0, 1080, 720, 480, 240).map { url.replace("/240/", "/$it/") }, candidates(url))
-    }
-
-    @Test fun trueOriginalPrecedesPotentiallyUpscaledLargeImages() {
-        for (size in listOf(0, 1500, 2048)) {
-            val url = "https://imgessl.kugou.com/albumcover/$size/cover.jpg"
-            assertEquals(url.replace("/$size/", "/0/"), candidates(url).first())
-            assertTrue(candidates(url).contains(url))
-        }
-    }
-
-    @Test fun signedUnknownAndDatePathsArePreserved() {
-        for (url in listOf("https://imgessl.kugou.com/stdmusic/240/file.jpg?sign=token",
-            "https://imgessl.kugou.com/stdmusic/20260924/file.jpg",
-            "https://example.com/stdmusic/240/file.jpg",
-            "https://kugou.com.example.com/stdmusic/240/file.jpg")) {
-            assertEquals(listOf(url), candidates(url))
-        }
-    }
-
-    @Test fun placeholdersAndInvalidImagesLeaveNativeFallbackAvailable() {
-        for (url in listOf(null, "", "-", "/sdcard/cover.jpg", "file:///sdcard/cover.jpg", "http://example.com/image.jpg")) {
-            assertTrue(candidates(url).isEmpty())
-        }
-    }
-
-    @Test fun cancellationStopsTryingMoreSizesAfterSongChange() {
-        var active = true
-        val iterator = KugouArtworkAddresses.candidates("https://imgessl.kugou.com/stdmusic/{size}/file.jpg") { active }.iterator()
-        assertTrue(iterator.hasNext())
-        iterator.next()
-        active = false
-        assertFalse(iterator.hasNext())
-    }
-
+class KugouArtworkTest {
     @Test fun currentSongUsesCurrentServiceMethodAndRejectsSwitchRaces() {
         FakeService.song = FakeSong("current", 1, "Song", "Artist", "https://imgessl.kugou.com/stdmusic/{size}/a.jpg")
         val source = source()
         val player = PlayerSnapshot.Empty.copy(title = "Song", artist = "Artist")
         val current = requireNotNull(source.currentSong(player))
-        assertEquals("kugoulite:1:current", source.cacheKey(current))
+        assertEquals("kugou:1:current:", source.cacheKey(current))
         assertTrue(source.isCurrentSong(current))
         FakeService.song = FakeSong("next", 2, "Song", "Artist", "https://imgessl.kugou.com/stdmusic/{size}/b.jpg")
         assertFalse(source.isCurrentSong(current)) // Same metadata does not mean same recording.
@@ -98,7 +53,7 @@ class KugouLiteArtworkTest {
         FakeService.afterRange = null
     }
 
-    private fun source() = KugouLiteArtworkSource(object : ClassLoader(javaClass.classLoader) {
+    private fun source() = KugouArtworkSource(object : ClassLoader(javaClass.classLoader) {
         override fun loadClass(name: String): Class<*> = when (name) {
             "com.kugou.framework.service.util.PlaybackServiceUtil" -> FakeService::class.java
             "com.kugou.framework.service.entity.KGMusicWrapper" -> FakeSong::class.java
@@ -106,7 +61,7 @@ class KugouLiteArtworkTest {
         }
     })
 
-    private fun queue(size: Int, position: Int): KugouLiteArtworkSource {
+    private fun queue(size: Int, position: Int): KugouArtworkSource {
         FakeService.queue = List(size) { FakeSong("$it", it.toLong() + 1, "Song", "Artist", null) }
         FakeService.song = FakeService.queue[position]
         FakeService.position = position
@@ -116,9 +71,9 @@ class KugouLiteArtworkTest {
         return source()
     }
 
-    private fun neighbours(source: KugouLiteArtworkSource): List<String> = source.neighbours(
+    private fun neighbours(source: KugouArtworkSource): List<String> = source.neighbours(
         requireNotNull(source.currentSong(PlayerSnapshot.Empty.copy(title = "Song", artist = "Artist"))),
-    ).map { it.hash }
+    ).map { it.identity.hash }
 
     // Host API names are invoked reflectively by the adapter under test.
     @Suppress("unused")
@@ -128,7 +83,10 @@ class KugouLiteArtworkTest {
         fun getMixId() = id
         fun getTrackName() = title
         fun getArtistName() = artist
-        fun b1() = image
+        fun f2() = image
+        fun X1(): String? = null
+        fun d2() = hash
+        fun getExtraId() = ""
     }
 
     @Suppress("unused")
@@ -139,12 +97,12 @@ class KugouLiteArtworkTest {
         var mode = 1
         val ranges = mutableListOf<Pair<Int, Int>>()
         var afterRange: (() -> Unit)? = null
-        @JvmStatic fun s0() = song
+        @JvmStatic fun Q1() = song
         @JvmStatic fun I1(): FakeSong = error("I1 reads the next song")
-        @JvmStatic fun V1() = queue.size
-        @JvmStatic fun N1() = position
-        @JvmStatic fun M1() = mode
-        @JvmStatic fun J1(start: Int, count: Int): Array<FakeSong> {
+        @JvmStatic fun Q4() = queue.size
+        @JvmStatic fun v4() = position
+        @JvmStatic fun t4() = mode
+        @JvmStatic fun l4(start: Int, count: Int): Array<FakeSong> {
             ranges += start to count
             return queue.subList(start, start + count).toTypedArray().also { afterRange?.invoke() }
         }

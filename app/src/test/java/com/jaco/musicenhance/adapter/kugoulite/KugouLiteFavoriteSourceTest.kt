@@ -1,5 +1,6 @@
 package com.jaco.musicenhance.adapter.kugoulite
 
+import com.jaco.musicenhance.adapter.PolledFavoriteControl
 import android.app.Activity
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 import org.junit.Assert.*
@@ -24,7 +25,7 @@ class KugouLiteFavoriteSourceTest {
     }
 
     @Test fun readsByHashAndMixIdWithoutNativeViewTagsAndRejectsMismatchedSongs() = withSource { source ->
-        assertEquals(KugouLiteFavoriteControl.State("1:hash", true), source.read(song))
+        assertEquals(PolledFavoriteControl.State("1:hash", true), source.read(song))
         Database.favorite = false
         assertEquals(false, source.read(song)?.favorite)
         assertNull(source.read(song.copy(title = "Stale")))

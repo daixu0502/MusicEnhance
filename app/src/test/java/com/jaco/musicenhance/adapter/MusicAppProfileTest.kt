@@ -3,7 +3,9 @@ package com.jaco.musicenhance.adapter
 import com.jaco.musicenhance.adapter.qq.QQPlayerProfile
 import com.jaco.musicenhance.adapter.apple.ApplePlayerProfile
 import com.jaco.musicenhance.adapter.kugoulite.KugouLitePlayerProfile
+import com.jaco.musicenhance.adapter.kugou.KugouPlayerProfile
 import com.jaco.musicenhance.adapter.kuwo.KuwoPlayerProfile
+import com.jaco.musicenhance.adapter.salt.SaltPlayerProfile
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -11,12 +13,32 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MusicAppProfileTest {
+    @Test fun saltOnlyOwnsEnhancedWindowsAndNeverReplacesItsLibraryOrSettings() {
+        assertSame(SaltPlayerProfile, MusicAppRegistry.find("com.salt.music"))
+        assertTrue(SaltPlayerProfile.isHomeActivity("com.salt.music.ui.MainActivity"))
+        assertFalse(SaltPlayerProfile.isPlayerActivity("com.salt.music.ui.MainActivity"))
+        assertFalse(SaltPlayerProfile.isPlayerActivity("com.salt.music.ui.fx.FxActivity"))
+        assertFalse(SaltPlayerProfile.isPlayerWindow("com.salt.music/.ui.MainActivity"))
+        assertTrue(SaltPlayerProfile.isEnhancedPlayerWindow("MusicEnhance:com.salt.music/com.salt.music.ui.fx.FxActivity"))
+        assertFalse(SaltPlayerProfile.isEnhancedPlayerWindow("MusicEnhance:com.salt.music/com.example.PlayerActivity"))
+    }
+    @Test fun standardAndConceptEditionNeverSharePlayerWindowRules() {
+        val flip = "com.kugou.android.app.player.flip.MiFlipPlayerActivity"
+        val land = "com.kugou.android.app.player.land.LandPlayerActivity"
+        assertTrue(KugouPlayerProfile.isPlayerActivity(flip))
+        assertFalse(KugouLitePlayerProfile.isPlayerActivity(flip))
+        assertFalse(KugouPlayerProfile.isPlayerActivity(land))
+        assertFalse(KugouPlayerProfile.isPlayerWindow("com.kugou.android.lite/$flip"))
+        assertFalse(KugouPlayerProfile.isPlayerActivity("com.kugou.android.app.MediaActivity"))
+        assertNull(MusicAppRegistry.forActivity("com.example", flip))
+    }
     @Test fun nativeNamespacesNeedNotMatchInstalledPackage() {
-        assertSame(KugouLitePlayerProfile, MusicAppRegistry.forActivity("com.kugou.android.app.MediaActivity"))
-        assertSame(KuwoPlayerProfile, MusicAppRegistry.forActivity("cn.kuwo.mod.nowplaynew.flip.MIUIFlipPlayPageActivity"))
+        assertSame(KugouLitePlayerProfile, MusicAppRegistry.forActivity("com.kugou.android.lite", "com.kugou.android.app.MediaActivity"))
+        assertSame(KugouPlayerProfile, MusicAppRegistry.forActivity("com.kugou.android", "com.kugou.android.app.MediaActivity"))
+        assertSame(KuwoPlayerProfile, MusicAppRegistry.forActivity("cn.kuwo.player", "cn.kuwo.mod.nowplaynew.flip.MIUIFlipPlayPageActivity"))
         assertTrue(KuwoPlayerProfile.isPlayerWindow("cn.kuwo.player/cn.kuwo.mod.nowplaynew.flip.MIUIFlipPlayPageActivity"))
         assertFalse(KuwoPlayerProfile.isPlayerWindow("cn.kuwo.fake/cn.kuwo.mod.nowplaynew.flip.MIUIFlipPlayPageActivity"))
-        assertNull(MusicAppRegistry.find("com.kugou.android")) // Full Kugou is not the tested Lite package.
+        assertSame(KugouPlayerProfile, MusicAppRegistry.find("com.kugou.android"))
     }
 
     @Test fun ownedPlayerMarkerDoesNotChangeUnmarkedHomeOrVideoClassification() {
@@ -48,7 +70,7 @@ class MusicAppProfileTest {
         assertNull(MusicAppRegistry.find(null))
         assertNull(MusicAppRegistry.find("com.example.music"))
         assertNull(MusicAppRegistry.find("com.tencent.qqmusic.clone"))
-        assertNull(MusicAppRegistry.forActivity("com.example.music.PlayerActivity"))
+        assertNull(MusicAppRegistry.forActivity("com.example.music", "com.example.music.PlayerActivity"))
         assertSame(QQPlayerProfile, MusicAppRegistry.find("com.tencent.qqmusic"))
     }
 

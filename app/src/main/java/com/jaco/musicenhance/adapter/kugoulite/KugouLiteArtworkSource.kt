@@ -1,5 +1,6 @@
 package com.jaco.musicenhance.adapter.kugoulite
 
+import com.jaco.musicenhance.adapter.kugoucommon.KugouArtworkAddresses
 import com.jaco.musicenhance.player.artwork.PlaylistArtworkSource
 import com.jaco.musicenhance.player.artwork.PlaylistArtworkWindow
 import com.jaco.musicenhance.player.model.PlayerSnapshot
@@ -61,5 +62,5 @@ internal class KugouLiteArtworkSource(loader: ClassLoader) : PlaylistArtworkSour
         }.orEmpty()
     }
     override fun addresses(song: Song, isCurrent: () -> Boolean): Sequence<String> =
-        KugouLiteArtworkAddresses.candidates(song.address, isCurrent)
+        KugouArtworkAddresses.candidates(song.address, isCurrent)
 }

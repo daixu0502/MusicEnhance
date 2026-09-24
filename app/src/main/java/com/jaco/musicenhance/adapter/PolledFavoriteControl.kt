@@ -1,9 +1,8 @@
-package com.jaco.musicenhance.adapter.kugoulite
+package com.jaco.musicenhance.adapter
 
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import com.jaco.musicenhance.adapter.NativeFavoriteControl
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.player.model.PlayerControlState
 import com.jaco.musicenhance.player.model.PlayerSnapshot
@@ -11,10 +10,10 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /** Owns favorite reads and pending actions; never infers success from a click or flips state locally. */
-internal class KugouLiteFavoriteControl(
+internal class PolledFavoriteControl(
     createSource: () -> Source,
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "MusicEnhance-kugoulite-favorite").apply { isDaemon = true }
+        Thread(task, "MusicEnhance-native-favorite").apply { isDaemon = true }
     },
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
     private val nowMs: () -> Long = SystemClock::elapsedRealtime,
@@ -48,7 +47,7 @@ internal class KugouLiteFavoriteControl(
         if (current.mutationPending && nowMs() >= current.mutationExpiresAtMs) {
             current.mutationPending = false
             current.expectedFavorite = null
-            moduleInfo("Kugou Lite favorite: confirmation timeout; retaining native state")
+            moduleInfo("Native favorite: confirmation timeout; retaining native state")
         }
         if (!readPending && nowMs() >= current.nextReadAtMs) readNativeState(current)
         return PlayerControlState(favorite = current.state?.favorite, songTitle = player.title)
@@ -66,7 +65,7 @@ internal class KugouLiteFavoriteControl(
                 if (current.state?.favorite == current.expectedFavorite && current.expectedFavorite != null) {
                     current.mutationPending = false
                     current.expectedFavorite = null
-                    moduleInfo("Kugou Lite favorite: native state confirmed")
+                    moduleInfo("Native favorite: native state confirmed")
                 }
                 reportFailure(current, result.exceptionOrNull())
                 current.nextReadAtMs = nowMs() + if (current.mutationPending) CONFIRM_POLL_MS else STATE_POLL_MS
@@ -91,10 +90,10 @@ internal class KugouLiteFavoriteControl(
                 if (dispatched.getOrDefault(false)) {
                     current.expectedFavorite = !fresh!!.favorite
                     current.mutationExpiresAtMs = nowMs() + CONFIRM_TIMEOUT_MS
-                    moduleInfo("Kugou Lite favorite: native action dispatched")
+                    moduleInfo("Native favorite: native action dispatched")
                 } else {
                     current.mutationPending = false
-                    moduleInfo("Kugou Lite favorite: native action unavailable or song changed")
+                    moduleInfo("Native favorite: native action unavailable or song changed")
                 }
                 reportFailure(current, result.exceptionOrNull() ?: dispatched.exceptionOrNull())
                 current.nextReadAtMs = 0L
@@ -106,7 +105,7 @@ internal class KugouLiteFavoriteControl(
     private fun reportFailure(current: Request, error: Throwable?) {
         if (error == null || current.failureReported) return
         current.failureReported = true
-        moduleInfo("Kugou Lite favorite failed: ${error.cause ?: error}")
+        moduleInfo("Native favorite failed: ${error.cause ?: error}")
     }
 
     override fun release() {

@@ -1,5 +1,6 @@
 package com.jaco.musicenhance.adapter.kugoulite
 
+import com.jaco.musicenhance.adapter.PolledFavoriteControl
 import android.app.Activity
 import android.view.ViewGroup
 import com.jaco.musicenhance.adapter.CachedNativeLyricsProvider
@@ -29,7 +30,7 @@ internal object KugouLitePlayerAdapter : MusicPlayerAdapter {
             ),
             readArtwork = { NativePlayerViews.findArtwork(nativeRoot) },
             repeatApi = { KugouLiteRepeatSource(activity.classLoader) },
-            favorite = KugouLiteFavoriteControl({ KugouLiteFavoriteSource(activity) }),
+            favorite = PolledFavoriteControl({ KugouLiteFavoriteSource(activity) }),
         )
         return session.copy(
             actions = session.actions.copy(seekAndPlay = { playback.seekAndPlay(it, session.data.snapshot()) }),
