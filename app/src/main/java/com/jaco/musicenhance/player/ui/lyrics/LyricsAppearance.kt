@@ -2,12 +2,16 @@ package com.jaco.musicenhance.player.ui.lyrics
 
 import android.graphics.RenderEffect
 import android.graphics.Shader
+import android.view.animation.PathInterpolator
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal object LyricsAppearance {
     const val BLUR_DURATION_MS = 320L
-    const val TEXT_FADE_DURATION_MS = 220L
+    const val TEXT_FADE_DURATION_MS = 380L
+    val TEXT_FADE_CURVE = PathInterpolator(0.22f, 0f, 0.2f, 1f)
+    val INACTIVE_TEXT_COLOR = 0xFFBFC3CB.toInt()
+    const val INACTIVE_TEXT_ALPHA = 0.56f
     const val MAX_BLUR_DISTANCE = 4
     const val BLUR_RADIUS_DP_PER_LINE = 1.25f
     const val BLUR_STEPS_PER_LINE = 20
@@ -17,10 +21,10 @@ internal object LyricsAppearance {
     fun distance(lineIndex: Int, activeLineIndex: Int) =
         abs(lineIndex - activeLineIndex.coerceAtLeast(0)).coerceAtMost(MAX_BLUR_DISTANCE)
 
-    fun textAlpha(distance: Int, focused: Boolean, browsing: Boolean): Float = when {
-        focused -> 1f
-        browsing -> 0.82f
-        else -> 0.64f - distance * 0.065f
+    fun textAlpha(distance: Int, active: Boolean, browsing: Boolean): Float = when {
+        active -> 1f
+        browsing -> 0.72f
+        else -> INACTIVE_TEXT_ALPHA - distance * 0.035f
     }
 }
 

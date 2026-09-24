@@ -3,6 +3,7 @@ package com.jaco.musicenhance.player.ui.lyrics
 import android.animation.ValueAnimator
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.Color
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -11,6 +12,7 @@ import com.jaco.musicenhance.player.model.LyricsSnapshot
 import com.jaco.musicenhance.player.model.LyricsStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,6 +24,79 @@ import org.robolectric.util.ReflectionHelpers
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], manifest = Config.NONE)
 class LyricsRenderingTest {
+    @Test fun wholeSentenceFadesFromGrayAndRapidRetargetKeepsTheVisibleState() {
+        val row = LyricRowView(RuntimeEnvironment.getApplication(), LyricLine(1000, "歌词"), 22f) {}
+        val label = row.getChildAt(0) as TextView
+        assertEquals(LyricsAppearance.INACTIVE_TEXT_COLOR, label.currentTextColor)
+        assertEquals(LyricsAppearance.INACTIVE_TEXT_ALPHA, label.alpha, 0.001f)
+
+        row.updateAppearance(1f, active = true, showTime = false)
+        val fadeIn = ReflectionHelpers.getField<ValueAnimator>(row, "textAppearanceAnimator")
+        fadeIn.currentPlayTime = 100
+        val intermediateColor = label.currentTextColor
+        val intermediateAlpha = label.alpha
+        assertTrue(Color.red(intermediateColor) > Color.red(LyricsAppearance.INACTIVE_TEXT_COLOR))
+        assertTrue(Color.red(intermediateColor) < 255)
+        assertTrue(intermediateAlpha > LyricsAppearance.INACTIVE_TEXT_ALPHA && intermediateAlpha < 1f)
+        row.updateAppearance(1f, active = true, showTime = false)
+        assertSame(fadeIn, ReflectionHelpers.getField(row, "textAppearanceAnimator"))
+
+        row.updateAppearance(LyricsAppearance.INACTIVE_TEXT_ALPHA, active = false, showTime = false)
+        assertFalse(fadeIn.isStarted)
+        assertEquals(intermediateColor, label.currentTextColor)
+        assertEquals(intermediateAlpha, label.alpha, 0.001f)
+        ReflectionHelpers.getField<ValueAnimator>(row, "textAppearanceAnimator").end()
+        assertEquals(LyricsAppearance.INACTIVE_TEXT_COLOR, label.currentTextColor)
+        assertEquals(LyricsAppearance.INACTIVE_TEXT_ALPHA, label.alpha, 0.001f)
+
+        row.updateAppearance(1f, active = true, showTime = false)
+        val finalFade = ReflectionHelpers.getField<ValueAnimator>(row, "textAppearanceAnimator")
+        finalFade.end()
+        assertEquals(Color.WHITE, label.currentTextColor)
+        assertEquals(1f, label.alpha, 0.001f)
+        row.updateAppearance(0.5f, active = false, showTime = false)
+        val interrupted = ReflectionHelpers.getField<ValueAnimator>(row, "textAppearanceAnimator")
+        ReflectionHelpers.callInstanceMethod<Unit>(row, "onDetachedFromWindow")
+        assertFalse(interrupted.isStarted)
+    }
+
+    @Test fun introDoesNotHighlightFirstSentenceAndSeekingMovesTheWhiteHighlight() {
+        val lyrics = LyricsView(RuntimeEnvironment.getApplication())
+        val snapshot = LyricsSnapshot("track", LyricsStatus.READY,
+            listOf(LyricLine(1000, "第一句"), LyricLine(2000, "第二句")))
+        lyrics.render(snapshot, 0)
+        layout(lyrics, 400, 600)
+        val bitmap = Bitmap.createBitmap(400, 600, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val column = lyrics.getChildAt(0) as LinearLayout
+        fun settle() {
+            lyrics.draw(canvas)
+            for (index in 0 until column.childCount) {
+                ReflectionHelpers.getField<ValueAnimator?>(column.getChildAt(index), "textAppearanceAnimator")?.end()
+            }
+        }
+        fun color(index: Int) = ((column.getChildAt(index) as LyricRowView).getChildAt(0) as TextView).currentTextColor
+        try {
+            settle()
+            assertEquals(LyricsAppearance.INACTIVE_TEXT_COLOR, color(0))
+            lyrics.render(snapshot, 1000)
+            settle()
+            assertEquals(Color.WHITE, color(0))
+            assertEquals(LyricsAppearance.INACTIVE_TEXT_COLOR, color(1))
+            lyrics.render(snapshot, 2000)
+            settle()
+            assertEquals(LyricsAppearance.INACTIVE_TEXT_COLOR, color(0))
+            assertEquals(Color.WHITE, color(1))
+            lyrics.render(snapshot, 1000)
+            settle()
+            assertEquals(Color.WHITE, color(0))
+            assertEquals(LyricsAppearance.INACTIVE_TEXT_COLOR, color(1))
+        } finally {
+            ReflectionHelpers.callInstanceMethod<Unit>(lyrics, "onDetachedFromWindow")
+            bitmap.recycle()
+        }
+    }
+
     @Test fun multipleAnimationUpdatesApplyOnlyTheLatestBlurAtDrawTime() {
         val lyrics = LyricsView(RuntimeEnvironment.getApplication())
         val snapshot = LyricsSnapshot("track", LyricsStatus.READY,

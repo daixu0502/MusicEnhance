@@ -1,5 +1,6 @@
 package com.jaco.musicenhance.player.ui.lyrics
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Color
@@ -29,7 +30,8 @@ internal class LyricRowView(
         includeFontPadding = false
         val blurPadding = dp(LyricsAppearance.BLUR_PADDING_DP).toInt()
         setPadding(0, blurPadding, 0, blurPadding)
-        setTextColor(Color.WHITE)
+        setTextColor(LyricsAppearance.INACTIVE_TEXT_COLOR)
+        alpha = LyricsAppearance.INACTIVE_TEXT_ALPHA
         setLineSpacing(dp(3f), 1f)
         setTextSize(TypedValue.COMPLEX_UNIT_PX, textSizePx)
     }
@@ -46,7 +48,9 @@ internal class LyricRowView(
     private var tapAccepted = false
     private var touchStartX = 0f
     private var touchStartY = 0f
-    private var targetTextAlpha = Float.NaN
+    private var targetTextAlpha = LyricsAppearance.INACTIVE_TEXT_ALPHA
+    private var targetTextColor = LyricsAppearance.INACTIVE_TEXT_COLOR
+    private var textAppearanceAnimator: ValueAnimator? = null
     private var timeVisible = false
 
     val singleLineHeight: Int get() = lyricLabel.lineHeight + lyricLabel.paddingTop +
@@ -71,10 +75,29 @@ internal class LyricRowView(
     fun setLyricTextSize(sizePx: Float) = lyricLabel.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizePx)
     fun setLyricBlur(effect: RenderEffect?) = lyricLabel.setRenderEffect(effect)
 
-    fun updateAppearance(textAlpha: Float, showTime: Boolean) {
-        if (targetTextAlpha != textAlpha) {
+    fun updateAppearance(textAlpha: Float, active: Boolean, showTime: Boolean) {
+        val textColor = if (active) Color.WHITE else LyricsAppearance.INACTIVE_TEXT_COLOR
+        if (targetTextAlpha != textAlpha || targetTextColor != textColor) {
+            textAppearanceAnimator?.cancel()
             targetTextAlpha = textAlpha
-            lyricLabel.animate().alpha(textAlpha).setDuration(LyricsAppearance.TEXT_FADE_DURATION_MS).start()
+            targetTextColor = textColor
+            val startAlpha = lyricLabel.alpha
+            // Retarget from the visible state so a rapid seek never flashes white or gray.
+            if (!ValueAnimator.areAnimatorsEnabled()) {
+                lyricLabel.alpha = textAlpha
+                lyricLabel.setTextColor(textColor)
+                textAppearanceAnimator = null
+            } else {
+                textAppearanceAnimator = ValueAnimator.ofArgb(lyricLabel.currentTextColor, textColor).apply {
+                    duration = LyricsAppearance.TEXT_FADE_DURATION_MS
+                    interpolator = LyricsAppearance.TEXT_FADE_CURVE
+                    addUpdateListener {
+                        lyricLabel.setTextColor(it.animatedValue as Int)
+                        lyricLabel.alpha = startAlpha + (textAlpha - startAlpha) * it.animatedFraction
+                    }
+                    start()
+                }
+            }
         }
         if (timeVisible != showTime) {
             timeVisible = showTime
@@ -138,7 +161,8 @@ internal class LyricRowView(
     }
 
     override fun onDetachedFromWindow() {
-        lyricLabel.animate().cancel()
+        textAppearanceAnimator?.cancel()
+        textAppearanceAnimator = null
         targetTextAlpha = Float.NaN
         tapAccepted = false
         super.onDetachedFromWindow()

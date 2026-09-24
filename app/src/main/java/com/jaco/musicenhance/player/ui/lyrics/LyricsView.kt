@@ -279,9 +279,10 @@ internal class LyricsView(context: Context) : ScrollView(context) {
             row.view.updateAppearance(
                 textAlpha = LyricsAppearance.textAlpha(
                     LyricsAppearance.distance(index, activeLineIndex),
-                    focused = index == activeLineIndex || index == selectedLineIndex,
+                    active = index == activeLineIndex,
                     browsing = isBrowsingLyrics,
                 ),
+                active = index == activeLineIndex,
                 showTime = isBrowsingLyrics && index == selectedLineIndex,
             )
         }
