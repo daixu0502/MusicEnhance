@@ -5,7 +5,6 @@ import com.jaco.musicenhance.player.PlayerController
 import com.jaco.musicenhance.player.artwork.ArtworkProvider
 import com.jaco.musicenhance.player.lyrics.LyricsProvider
 import com.jaco.musicenhance.player.audio.SpectrumEngine
-import com.jaco.musicenhance.player.model.PlayerControlState
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 
 /** Shared transport for media-session apps. Optional native features remain unknown by default. */
@@ -30,11 +29,11 @@ internal open class MediaSessionPlayerController(
             artworkProvider.release()
         }
     }
-    override fun controlState() = PlayerControlState()
+    override fun controlState() = snapshot().controls
     override fun cycleRepeat() = MediaSessionStore.repeat()
     override fun toggleFavorite() = MediaSessionStore.favorite()
     override fun nativeArtwork(): Bitmap? = null
-    override val hasArtworkProvider get() = artworkProvider !== ArtworkProvider.Unsupported
+    override val holdPreviousArtworkWhileLoading get() = artworkProvider.holdPreviousArtworkWhileLoading
     override fun verifiedArtwork(snapshot: PlayerSnapshot) = artworkProvider.snapshot(snapshot)
     override fun bassLevel() = SpectrumEngine.bassSnapshot()
     override fun setSpectrumPlaybackActive(active: Boolean) = SpectrumEngine.setRemotePlaybackActive(active)

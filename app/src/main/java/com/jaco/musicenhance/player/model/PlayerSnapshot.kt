@@ -12,6 +12,7 @@ internal data class PlayerSnapshot(
     val isPlaying: Boolean,
     val actions: Long,
     val customActions: List<String>,
+    val controls: PlayerControlState = PlayerControlState(),
 ) {
     /** Metadata cache key, not a native song ID. Adapters must still verify native identity. */
     val metadataKey: String get() = "$title\u0000$artist\u0000$album"

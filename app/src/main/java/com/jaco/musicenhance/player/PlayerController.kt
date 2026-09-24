@@ -29,8 +29,8 @@ internal interface PlayerController {
     fun cycleRepeat(): Boolean
     fun toggleFavorite(): Boolean
     fun nativeArtwork(): Bitmap?
-    /** Whether a separate song-verified source can improve metadata/native artwork. */
-    val hasArtworkProvider: Boolean get() = false
+    /** Hold the previous background while a host with stale metadata resolves its new cover. */
+    val holdPreviousArtworkWhileLoading: Boolean get() = false
     /** Return artwork verified for this snapshot's song; null while unavailable/loading. */
     fun verifiedArtwork(snapshot: PlayerSnapshot): Bitmap? = null
     fun bassLevel(): Float

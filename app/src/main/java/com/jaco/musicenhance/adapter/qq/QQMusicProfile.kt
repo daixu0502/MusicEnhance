@@ -13,4 +13,5 @@ internal val QQMusicProfile = MusicAppProfile(
             (name.endsWith("Activity") || name.contains("Activity\$"))
     },
     horizontalActivityMatcher = { it.contains("HorizontalScreenPlayerActivity", ignoreCase = true) },
+    hideCoverHomeNavigationBar = true,
 )

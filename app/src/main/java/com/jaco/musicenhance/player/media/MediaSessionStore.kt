@@ -9,12 +9,14 @@ import android.os.Looper
 import android.os.SystemClock
 import com.jaco.musicenhance.player.audio.SpectrumEngine
 import com.jaco.musicenhance.player.model.PlayerSnapshot
+import com.jaco.musicenhance.player.model.PlayerControlState
 import java.util.concurrent.CopyOnWriteArraySet
 
 internal object MediaSessionStore {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val listeners = CopyOnWriteArraySet<(PlayerSnapshot) -> Unit>()
     private var controller: MediaController? = null
+    var controlReader: MediaSessionControlReader? = null
     private var lastSnapshot = PlayerSnapshot.Empty
     private var lastSnapshotReceivedAt = SystemClock.elapsedRealtime()
 
@@ -160,6 +162,7 @@ internal object MediaSessionStore {
                 playback?.state == PlaybackState.STATE_BUFFERING,
             actions = playback?.actions ?: 0,
             customActions = playback?.customActions?.map { it.action }.orEmpty(),
+            controls = runCatching { controlReader?.read(metadata, playback) }.getOrNull() ?: PlayerControlState(),
         ).also {
             lastSnapshot = it
             lastSnapshotReceivedAt = SystemClock.elapsedRealtime()

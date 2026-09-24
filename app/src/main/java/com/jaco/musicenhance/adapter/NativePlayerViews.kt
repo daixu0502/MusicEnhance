@@ -18,7 +18,11 @@ internal object NativePlayerViews {
 
         fun visit(view: View) {
             if (view.tag == PLAYER_OVERLAY_TAG) return
+            // Background images may be large square bitmaps that the host has already blurred.
             if (view is ImageView && view.width > 0 && view.height > 0) {
+                val name = resourceName(view).lowercase()
+                if (name.contains("blur") || name.contains("background") ||
+                    name.endsWith("_bg") || name.startsWith("bg_")) return
                 val bitmap = (view.drawable as? BitmapDrawable)?.bitmap
                 if (bitmap != null && !bitmap.isRecycled) {
                     val sourceShort = min(bitmap.width, bitmap.height)
@@ -44,6 +48,18 @@ internal object NativePlayerViews {
         visit(root)
         return best
     }
+
+    fun find(root: View, predicate: (View) -> Boolean): View? {
+        if (root.tag == PLAYER_OVERLAY_TAG) return null
+        if (predicate(root)) return root
+        if (root is ViewGroup) for (index in 0 until root.childCount) {
+            find(root.getChildAt(index), predicate)?.let { return it }
+        }
+        return null
+    }
+
+    fun resourceName(view: View): String = if (view.id == View.NO_ID) "" else
+        runCatching { view.resources.getResourceEntryName(view.id) }.getOrDefault("")
 
     fun clickControl(root: ViewGroup, keywords: List<String>): Boolean {
         val match = findNativeControl(root, keywords) ?: return false

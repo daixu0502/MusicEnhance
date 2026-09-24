@@ -14,6 +14,7 @@ internal object CoverHomeAppearance {
 
     fun update(activity: Activity) {
         val profile = MusicAppRegistry.find(activity.packageName) ?: return
+        if (!profile.hideCoverHomeNavigationBar) return
         if (!profile.isHomeActivity(activity.javaClass.name)) return
         val window = activity.window
         @Suppress("DEPRECATION")

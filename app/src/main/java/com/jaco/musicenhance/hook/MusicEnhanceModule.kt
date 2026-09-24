@@ -71,7 +71,7 @@ internal fun safeHook(name: String, action: () -> Unit) {
 }
 
 internal fun hookEnabled(profile: MusicAppProfile): Boolean = runCatching {
-    module.getRemotePreferences(Prefs.NAME).getBoolean(profile.enabledPreference, false)
+    Prefs.isHookEnabled(module.getRemotePreferences(Prefs.NAME), profile.enabledPreference)
 }.getOrDefault(false)
 
 internal fun moduleInfo(message: String) {

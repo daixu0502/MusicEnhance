@@ -4,6 +4,9 @@
 
     <queries>
         <package android:name="com.tencent.qqmusic" />
+        <package android:name="com.apple.android.music" />
+        <package android:name="com.kugou.android.lite" />
+        <package android:name="cn.kuwo.player" />
         <package android:name="org.lsposed.manager" />
     </queries>
 

@@ -4,11 +4,17 @@ import android.animation.ValueAnimator
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.WindowManager
 import android.widget.ImageView
+import android.widget.FrameLayout
+import com.jaco.musicenhance.adapter.NativeMediaPlayerController
+import com.jaco.musicenhance.adapter.qq.QQArtworkProvider
 import com.jaco.musicenhance.player.PlayerController
+import com.jaco.musicenhance.player.artwork.ArtworkProvider
+import com.jaco.musicenhance.player.artwork.ArtworkTransition
 import com.jaco.musicenhance.player.model.PlayerControlState
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 import com.jaco.musicenhance.player.ui.lyrics.LyricsView
@@ -28,6 +34,73 @@ import org.robolectric.util.ReflectionHelpers
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], manifest = Config.NONE)
 class CoverPlayerViewTest {
+    @Test
+    fun qqHoldsPreviousBackgroundUntilVerifiedArtworkOrTimeout() {
+        val activityController = Robolectric.buildActivity(Activity::class.java).create()
+        val handler = Handler(Looper.getMainLooper())
+        val provider = QQArtworkProvider(javaClass.classLoader!!, handler, handler, prefetchWorker = handler)
+        try {
+            val activity = activityController.get()
+            val controller = NativeMediaPlayerController("QQ", FrameLayout(activity), artworkProvider = provider)
+            assertTrue(controller.holdPreviousArtworkWhileLoading)
+            val player = CoverPlayerView(activity, activity.window, controller) {}
+            val background = (0 until player.childCount).map(player::getChildAt)
+                .filterIsInstance<GradientBlurArtworkView>().single()
+            fun render(snapshot: PlayerSnapshot) = ReflectionHelpers.callInstanceMethod<Unit>(player, "render",
+                ReflectionHelpers.ClassParameter.from(PlayerSnapshot::class.java, snapshot))
+            val first = Bitmap.createBitmap(360, 360, Bitmap.Config.ARGB_8888)
+            val next = Bitmap.createBitmap(360, 360, Bitmap.Config.ARGB_8888)
+            val song = PlayerSnapshot.Empty.copy(title = "First", durationMs = 60_000, artwork = first)
+            render(song)
+            render(song.copy(title = "Next", artwork = next))
+            assertSame("QQ retains its previous frame while the next cover is being verified", first, background.artwork)
+            shadowOf(Looper.getMainLooper()).idle()
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(ArtworkTransition.MAX_WAIT_MS))
+            render(song.copy(title = "Next", artwork = null))
+            assertSame("The existing native fallback must appear once the bounded wait expires", next, background.artwork)
+        } finally {
+            provider.release()
+            activityController.destroy()
+        }
+    }
+
+    @Test
+    fun optionalHighResolutionLoadingDoesNotDelayNewNativeCoverAndUpgradesWhenReady() {
+        val activityController = Robolectric.buildActivity(Activity::class.java).create()
+        try {
+            val activity = activityController.get()
+            var verified: Bitmap? = null
+            val provider = object : ArtworkProvider {
+                override val holdPreviousArtworkWhileLoading = false
+                override fun snapshot(player: PlayerSnapshot) = verified
+                override fun release() = Unit
+            }
+            val controller = NativeMediaPlayerController("Test", FrameLayout(activity), artworkProvider = provider)
+            assertFalse(controller.holdPreviousArtworkWhileLoading)
+            val player = CoverPlayerView(activity, activity.window, controller) {}
+            val background = (0 until player.childCount).map(player::getChildAt)
+                .filterIsInstance<GradientBlurArtworkView>().single()
+            fun render(snapshot: PlayerSnapshot) = ReflectionHelpers.callInstanceMethod<Unit>(player, "render",
+                ReflectionHelpers.ClassParameter.from(PlayerSnapshot::class.java, snapshot))
+            val first = Bitmap.createBitmap(360, 360, Bitmap.Config.ARGB_8888)
+            val next = Bitmap.createBitmap(360, 360, Bitmap.Config.ARGB_8888)
+            val highResolution = Bitmap.createBitmap(700, 700, Bitmap.Config.ARGB_8888)
+            render(PlayerSnapshot.Empty.copy(title = "First", artwork = first))
+            val second = PlayerSnapshot.Empty.copy(title = "Second", artwork = next)
+            render(second)
+            assertSame("Do not hold the old cover for 1.5 seconds while HTTPS is pending", next, background.artwork)
+            verified = highResolution
+            render(second)
+            assertSame(highResolution, background.artwork)
+            verified = null
+            render(second.copy(artwork = null))
+            assertSame(highResolution, background.artwork)
+            controller.release()
+        } finally {
+            activityController.destroy()
+        }
+    }
+
     @Test
     @Config(sdk = [34, 35])
     fun firstTraversalLaysOutControlsWithoutWaitingForPostedMessages() {
@@ -146,7 +219,7 @@ class CoverPlayerViewTest {
             val activity = activityController.get()
             var verifiedArtwork: Bitmap? = null
             val controller = object : PlayerController by EmptyPlayerController {
-                override val hasArtworkProvider = true
+                override val holdPreviousArtworkWhileLoading = true
                 override fun verifiedArtwork(snapshot: PlayerSnapshot) = verifiedArtwork
             }
             val player = CoverPlayerView(activity, activity.window, controller) {}

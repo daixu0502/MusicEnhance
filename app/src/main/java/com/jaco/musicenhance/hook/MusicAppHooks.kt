@@ -9,6 +9,7 @@ import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.util.Log
+import com.jaco.musicenhance.adapter.MusicAppAdapters
 import com.jaco.musicenhance.adapter.isHorizontalPlayerActivityName
 import com.jaco.musicenhance.adapter.isPlayerActivityName
 import com.jaco.musicenhance.device.CoverScreenDetector
@@ -20,7 +21,7 @@ import io.github.libxposed.api.XposedInterface.Hooker
 
 internal object MusicAppHooks {
     fun install(processName: String) {
-        module.log(Log.INFO, MusicEnhanceModule.TAG, "Installing music app hooks in $processName")
+        module.log(Log.INFO, MusicEnhanceModule.TAG, "Installing music app hooks in $processName; build=${com.jaco.musicenhance.BuildConfig.VERSION_CODE}")
         safeHook("application process bridge") {
             module.installHook(
                 Instrumentation::class.java.declaredMethod(
@@ -29,7 +30,10 @@ internal object MusicAppHooks {
                 ),
                 "musicenhance.application.create",
                 after { chain ->
-                    (chain.args.firstOrNull() as? Application)?.let(PlayerProcessBridge::initialize)
+                    (chain.args.firstOrNull() as? Application)?.let { application ->
+                        MusicAppAdapters.onApplicationCreated(application)
+                        PlayerProcessBridge.initialize(application)
+                    }
                 },
             )
         }
@@ -140,10 +144,10 @@ internal object MusicAppHooks {
     }
 
     /**
-     * QQ Music opens a landscape-only activity while the phone passes through 90°/270°.
+     * QQ Music opens a landscape-only activity while the phone passes through 90掳/270掳.
      * Even when that activity is immediately finished, HyperOS applies a fixed-rotation
      * transform first and can leave the cover cutout in the opposite corner. Block the launch
-     * while already on the cover display so the system only performs the 0°/180° rotation.
+     * while already on the cover display so the system only performs the 0掳/180掳 rotation.
      */
     private fun installHorizontalPlayerLaunchBlock() {
         val activityLaunchMethods = Activity::class.java.declaredMethods

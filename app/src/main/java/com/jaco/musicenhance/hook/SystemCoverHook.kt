@@ -9,6 +9,7 @@ import com.jaco.musicenhance.adapter.MusicAppProfile
 import com.jaco.musicenhance.adapter.MusicAppRegistry
 import com.jaco.musicenhance.adapter.isHorizontalPlayerActivityName
 import io.github.libxposed.api.XposedInterface.Hooker
+import java.util.WeakHashMap
 
 /** Enables Xiaomi's own small-cover-screen policy for Music app only. */
 internal object SystemCoverHook {
@@ -18,8 +19,10 @@ internal object SystemCoverHook {
     private const val WATCH_OVERLAY_PROPERTY = "miui.supportFlipWatchOverlayGroupView"
     private const val FULL_SCREEN = 0
     private const val LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS = 3
+    private val embeddedOriginalInfo = WeakHashMap<Any, ActivityInfo>()
 
     fun install(classLoader: ClassLoader) {
+        SystemCoverWidgetHook.install(classLoader)
         safeHook("application compatibility manager") {
             val manager = classLoader.loadClass("com.android.server.wm.ApplicationCompatManager")
             safeHook("application compatibility value") { installApplicationValueHook(manager) }
@@ -103,6 +106,8 @@ internal object SystemCoverHook {
 
     /** Forces Music app out of HyperOS' narrow watch-overlay compatibility window. */
     private fun installFullScreenHooks(classLoader: ClassLoader) {
+        safeHook("embedded player window configuration") { installEmbeddedRelayoutHook(classLoader) }
+        safeHook("embedded player window cleanup") { installEmbeddedRemovalHook(classLoader) }
         safeHook("Music app activity full-screen metadata") {
             val packageManager = classLoader.loadClass("com.android.server.pm.IPackageManagerBase")
             module.installHook(
@@ -143,9 +148,11 @@ internal object SystemCoverHook {
                     val property = chain.args.getOrNull(0) as? String
                     val packageName = chain.args.getOrNull(1) as? String
                     val className = chain.args.getOrNull(2) as? String
+                    val userId = chain.args.getOrNull(3) as? Int
                     val profile = enabledProfile(packageName)
                     if (property == WATCH_OVERLAY_PROPERTY && profile != null) {
                         when {
+                            isEmbeddedComponentActive(profile, className, userId) -> constructor.newInstance(property, false, packageName, className)
                             profile.isHomeActivity(className) -> constructor.newInstance(property, true, packageName, className)
                             profile.isPlayerActivity(className) -> constructor.newInstance(property, false, packageName, className)
                             else -> chain.proceed()
@@ -164,10 +171,11 @@ internal object SystemCoverHook {
                     val owner = fieldValue(chain.thisObject, "mOwner")
                     val packageName = fieldValue(owner, "packageName") as? String
                     val activityInfo = fieldValue(owner, "info") as? ActivityInfo
-                    val result = chain.proceed()
+                    val profile = enabledProfile(packageName)
                     if (
-                        enabledProfile(packageName)?.isPlayerActivity(activityInfo?.name) == true
-                    ) false else result
+                        profile?.isPlayerActivity(activityInfo?.name) == true ||
+                        synchronized(embeddedOriginalInfo) { embeddedOriginalInfo.containsKey(owner) }
+                    ) false else chain.proceed()
                 },
             )
         }
@@ -189,7 +197,7 @@ internal object SystemCoverHook {
                 },
             )
         }
-        module.log(Log.INFO, MusicEnhanceModule.TAG, "Music app outer-screen full-screen hooks installed")
+        module.log(Log.INFO, MusicEnhanceModule.TAG, "Music app outer-screen full-screen hooks installed; build=${com.jaco.musicenhance.BuildConfig.VERSION_CODE}")
     }
 
     private fun ActivityInfo.applyFullScreenMetadata() {
@@ -207,6 +215,109 @@ internal object SystemCoverHook {
     private fun isPlayerWindow(attrs: WindowManager.LayoutParams): Boolean {
         val title = runCatching { attrs.title?.toString() }.getOrNull()
         return enabledProfile(attrs.packageName)?.isPlayerWindow(title) == true
+    }
+
+    /** A title change alone doesn't invalidate HyperOS' cached ActivityRecord configuration. */
+    private fun installEmbeddedRelayoutHook(loader: ClassLoader) {
+        val service = loader.loadClass("com.android.server.wm.WindowManagerService")
+        service.declaredMethods.filter { it.name == "relayoutWindow" }.forEachIndexed { index, method ->
+            module.installHook(method, "musicenhance.embedded.relayout.$index", Hooker { chain ->
+                var changedOwner: ActivityInfo? = null
+                val attrs = chain.args.filterIsInstance<WindowManager.LayoutParams>().firstOrNull()
+                val profile = attrs?.packageName?.let(MusicAppRegistry::find)
+                if (profile != null && profile.embeddedPlayerActivityNames.isNotEmpty()) {
+                    safeHook("embedded player bounds refresh") {
+                        val manager = chain.thisObject ?: return@safeHook
+                        val lock = fieldValue(manager, "mGlobalLock") ?: return@safeHook
+                        val callingIdentity = android.os.Binder.clearCallingIdentity()
+                        try {
+                            synchronized(lock) {
+                                val windows = fieldValue(manager, "mWindowMap") as? Map<*, *> ?: return@synchronized
+                                val window = resolveRelayoutWindow(chain.args, windows) ?: return@synchronized
+                                val owner = fieldValue(window, "mActivityRecord") ?: return@synchronized
+                                val info = fieldValue(owner, "info") as? ActivityInfo ?: return@synchronized
+                                if (info.packageName != profile.packageName || info.name !in profile.embeddedPlayerActivityNames) return@synchronized
+                                val active = hookEnabled(profile) && profile.isEmbeddedPlayerWindow(attrs.title?.toString())
+                                if (active == synchronized(embeddedOriginalInfo) { embeddedOriginalInfo.containsKey(owner) }) return@synchronized
+                                val infoField = owner.javaClass.getDeclaredField("info").apply { isAccessible = true }
+                                if (active) {
+                                    infoField.set(owner, ActivityInfo(info).apply { applyFullScreenMetadata() })
+                                    synchronized(embeddedOriginalInfo) { embeddedOriginalInfo[owner] = info }
+                                } else {
+                                    infoField.set(owner, synchronized(embeddedOriginalInfo) { embeddedOriginalInfo.remove(owner) } ?: return@synchronized)
+                                }
+                                changedOwner = info
+                                // Recompute only on ownership transitions, never on every frame/relayout.
+                                findMethod(owner, "recomputeConfiguration", 0)?.invoke(owner)
+                                findMethod(owner, "ensureActivityConfiguration", 2)?.takeIf {
+                                    it.parameterTypes.contentEquals(arrayOf(Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType))
+                                }?.invoke(owner, 0, true)
+                                moduleInfo("Embedded player bounds ownership=$active; app=${profile.packageName}")
+                            }
+                        } finally {
+                            android.os.Binder.restoreCallingIdentity(callingIdentity)
+                        }
+                    }
+                }
+                // Publish ownership before WMS calculates frames and sends this relayout's result.
+                // Recent Android releases pass an IBinder here, older ones pass an IWindow.
+                val result = chain.proceed()
+                changedOwner?.let { info ->
+                    SystemCoverWidgetHook.notifyOwnershipChanged(ComponentName(info.packageName, info.name), info.applicationInfo.uid)
+                }
+                result
+            })
+        }
+    }
+
+    /** A killed process may never send the relayout that restores its original window title. */
+    private fun installEmbeddedRemovalHook(loader: ClassLoader) {
+        val windowState = loader.loadClass("com.android.server.wm.WindowState")
+        module.installHook(windowState.getDeclaredMethod("removeImmediately"), "musicenhance.embedded.remove", Hooker { chain ->
+            val window = chain.thisObject
+            val owner = fieldValue(window, "mActivityRecord")
+            val attrs = fieldValue(window, "mAttrs") as? WindowManager.LayoutParams
+            val embedded = MusicAppRegistry.find(attrs?.packageName)?.isEmbeddedPlayerWindow(attrs?.title?.toString()) == true
+            val result = chain.proceed()
+            if (embedded && owner != null) safeHook("embedded player ownership cleanup") {
+                val original = synchronized(embeddedOriginalInfo) { embeddedOriginalInfo.remove(owner) } ?: return@safeHook
+                owner.javaClass.getDeclaredField("info").apply { isAccessible = true }.set(owner, original)
+                SystemCoverWidgetHook.notifyOwnershipChanged(ComponentName(original.packageName, original.name), original.applicationInfo.uid)
+            }
+            result
+        })
+    }
+
+    internal fun resolveRelayoutWindow(args: List<Any?>, windows: Map<*, *>): Any? =
+        args.firstNotNullOfOrNull { argument ->
+            val token = when (argument) {
+                is android.os.IBinder -> argument
+                is android.os.IInterface -> argument.asBinder()
+                else -> null
+            }
+            token?.let(windows::get)
+        }
+
+    private fun findMethod(instance: Any, name: String, parameterCount: Int): java.lang.reflect.Method? {
+        var type: Class<*>? = instance.javaClass
+        while (type != null) {
+            type.declaredMethods.firstOrNull { it.name == name && it.parameterCount == parameterCount }?.let {
+                it.isAccessible = true
+                return it
+            }
+            type = type.superclass
+        }
+        return null
+    }
+
+    private fun isEmbeddedComponentActive(profile: MusicAppProfile, className: String?, userId: Int?): Boolean {
+        if (className !in profile.embeddedPlayerActivityNames) return false
+        val owners = synchronized(embeddedOriginalInfo) { embeddedOriginalInfo.keys.toList() }
+        return owners.any { owner ->
+            val info = fieldValue(owner, "info") as? ActivityInfo
+            info?.packageName == profile.packageName && info.name == className &&
+                SystemCoverWidgetHook.userIdForUid(info.applicationInfo.uid) == userId
+        }
     }
 
     private fun fieldValue(instance: Any?, name: String): Any? {

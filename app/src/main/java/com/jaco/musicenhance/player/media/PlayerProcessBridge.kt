@@ -12,6 +12,8 @@ import com.jaco.musicenhance.hook.MusicEnhanceModule
 import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.player.audio.SpectrumEngine
 import com.jaco.musicenhance.player.model.PlayerSnapshot
+import com.jaco.musicenhance.player.model.PlayerControlState
+import com.jaco.musicenhance.player.model.RepeatMode
 import java.io.ByteArrayOutputStream
 import kotlin.math.max
 
@@ -31,6 +33,9 @@ internal object PlayerProcessBridge {
     private const val EXTRA_PLAYING = "playing"
     private const val EXTRA_ACTIONS = "actions"
     private const val EXTRA_CUSTOM_ACTIONS = "custom_actions"
+    private const val EXTRA_REPEAT_MODE = "repeat_mode"
+    private const val EXTRA_FAVORITE = "favorite"
+    private const val EXTRA_CONTROL_TITLE = "control_title"
     private const val EXTRA_SPECTRUM_FRAMES = "spectrum_frames"
     private const val EXTRA_SPECTRUM_FRAME_MS = "spectrum_frame_ms"
     private const val MAX_ARTWORK_SIDE = 1_280
@@ -100,6 +105,9 @@ internal object PlayerProcessBridge {
             putExtra(EXTRA_PLAYING, snapshot.isPlaying)
             putExtra(EXTRA_ACTIONS, snapshot.actions)
             putStringArrayListExtra(EXTRA_CUSTOM_ACTIONS, ArrayList(snapshot.customActions))
+            putExtra(EXTRA_REPEAT_MODE, snapshot.controls.repeatMode.name)
+            snapshot.controls.favorite?.let { putExtra(EXTRA_FAVORITE, it) }
+            putExtra(EXTRA_CONTROL_TITLE, snapshot.controls.songTitle)
             encodeArtwork(snapshot.artwork)?.let { putExtra(EXTRA_ARTWORK, it) }
         }
         runCatching { appContext.sendBroadcast(intent) }.onFailure {
@@ -141,6 +149,11 @@ internal object PlayerProcessBridge {
                 isPlaying = intent.getBooleanExtra(EXTRA_PLAYING, false),
                 actions = intent.getLongExtra(EXTRA_ACTIONS, 0L),
                 customActions = intent.getStringArrayListExtra(EXTRA_CUSTOM_ACTIONS).orEmpty(),
+                controls = PlayerControlState(
+                    repeatMode = RepeatMode.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_REPEAT_MODE) } ?: RepeatMode.UNKNOWN,
+                    favorite = if (intent.hasExtra(EXTRA_FAVORITE)) intent.getBooleanExtra(EXTRA_FAVORITE, false) else null,
+                    songTitle = intent.getStringExtra(EXTRA_CONTROL_TITLE),
+                ),
             ),
         )
     }

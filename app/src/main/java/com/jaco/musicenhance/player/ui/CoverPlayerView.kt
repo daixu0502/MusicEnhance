@@ -565,7 +565,7 @@ internal class CoverPlayerView(
             lyricsArtworkView.setImageBitmap(selectedArtwork)
         }
         val currentArtworkReady = verifiedArtwork?.isRecycled == false ||
-            (!controller.hasArtworkProvider && selectedArtwork != null)
+            (!controller.holdPreviousArtworkWhileLoading && selectedArtwork != null)
         val artwork = artworkTransition.background(
             selectedArtwork, currentArtworkReady, SystemClock.elapsedRealtime(),
         )
@@ -623,6 +623,7 @@ internal class CoverPlayerView(
         lyricsFavoriteButton.active = favoriteButton.active
         lyricsFavoriteButton.contentDescription = favoriteButton.contentDescription
         repeatButton.repeatMode = state.repeatMode
+        repeatButton.isEnabled = state.repeatMode != RepeatMode.UNKNOWN
         repeatButton.active = state.repeatMode in setOf(
             RepeatMode.LIST_LOOP,
             RepeatMode.SINGLE_LOOP,

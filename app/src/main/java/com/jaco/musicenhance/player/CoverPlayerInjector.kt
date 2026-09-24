@@ -31,6 +31,8 @@ internal object CoverPlayerInjector {
     private val suppressed = WeakHashMap<Activity, Boolean>()
     private val originalOrientations = WeakHashMap<Activity, Int>()
     private val backCallbacks = WeakHashMap<Activity, OnBackInvokedCallback>()
+    private val embeddedPages = WeakHashMap<Activity, EmbeddedPlayerPage>()
+    private val windowLayouts = WeakHashMap<Activity, PlayerWindowLayout>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /** Native UI policies yield only while this Activity is actually hosting our cover player. */
@@ -58,7 +60,24 @@ internal object CoverPlayerInjector {
         if (isPlayerActivityName(activity.javaClass.name)) observeWindow(activity)
     }
 
-    fun onResumed(activity: Activity) = observeWindow(activity)
+    fun onResumed(activity: Activity) {
+        safeHook("native player page") { MusicAppAdapters.onActivityReady(activity) }
+        observeWindow(activity)
+    }
+
+    fun showEmbeddedPage(activity: Activity, page: EmbeddedPlayerPage) {
+        if (activity.isFinishing || activity.isDestroyed) return
+        val profile = MusicAppRegistry.find(activity.packageName) ?: return
+        if (activity.javaClass.name !in profile.embeddedPlayerActivityNames) return
+        embeddedPages[activity] = page
+        observeWindow(activity)
+    }
+
+    fun hideEmbeddedPage(activity: Activity, identity: Any) {
+        if (embeddedPages[activity]?.identity != identity) return
+        embeddedPages.remove(activity)
+        (activity.window.peekDecorView() as? ViewGroup)?.let { removeOverlay(activity, it) }
+    }
 
     private fun observeWindow(activity: Activity) {
         if (activity.isFinishing || activity.isDestroyed || suppressed[activity] == true) return
@@ -80,7 +99,7 @@ internal object CoverPlayerInjector {
         val profile = MusicAppRegistry.find(activity.packageName) ?: return
         val decor = activity.window.decorView as? ViewGroup ?: return
         if (suppressed[activity] == true) return
-        if (!isPlayerActivityName(activity.javaClass.name)) {
+        if (!isPlayerActivityName(activity.javaClass.name) && activity !in embeddedPages) {
             removeOverlay(activity, decor)
             CoverHomeAppearance.update(activity)
             return
@@ -89,6 +108,7 @@ internal object CoverPlayerInjector {
         val isCoverScreen = CoverScreenDetector.isCoverScreen(activity)
         if (!enabled || !isCoverScreen) {
             removeOverlay(activity, decor)
+            safeHook("cover player unavailable") { MusicAppAdapters.onCoverPlayerUnavailable(activity) }
             module.log(
                 Log.INFO,
                 MusicEnhanceModule.TAG,
@@ -107,13 +127,26 @@ internal object CoverPlayerInjector {
             return
         }
 
-        prepareOrientation(activity)
-        activity.window.setDecorFitsSystemWindows(false)
+        windowLayouts.getOrPut(activity) {
+            val title = if (activity in embeddedPages) profile.embeddedPlayerWindowTitle(activity.javaClass.name) else null
+            PlayerWindowLayout(activity.window, title).also {
+                it.enter()
+                moduleInfo("Cover player window layout acquired; activity=${activity.javaClass.name}, cutoutMode=${activity.window.attributes.layoutInDisplayCutoutMode}")
+            }
+        }
+        if (activity in embeddedPages) {
+            // Let the title reach WindowManager before requesting bounds/orientation recalculation.
+            decor.post {
+                if (activity in windowLayouts && !activity.isDestroyed && !activity.isFinishing) prepareOrientation(activity)
+            }
+        } else prepareOrientation(activity)
+        // Embedded pages share their window with the home UI; preserve its decor policy.
+        if (activity !in embeddedPages) activity.window.setDecorFitsSystemWindows(false)
         val player = CoverPlayerView(
             activity,
             window = activity.window,
-            controller = MusicAppAdapters.create(profile, activity, decor),
-            onDismiss = ::dismissToMusicHome,
+            controller = MusicAppAdapters.create(profile, activity, embeddedPages[activity]?.nativeRoot?.get() ?: decor),
+            onDismiss = { dismissPlayer(activity) },
             keepScreenOnRequested = {
                 CoverScreenDetector.isCoverScreen(activity) && runCatching {
                     module.getRemotePreferences(Prefs.NAME).getBoolean(Prefs.KEEP_COVER_SCREEN_ON, false)
@@ -174,6 +207,18 @@ internal object CoverPlayerInjector {
         }
     }
 
+    private fun dismissPlayer(activity: Activity) {
+        val page = embeddedPages[activity]
+        if (page == null) {
+            dismissToMusicHome()
+            return
+        }
+        // Dismiss the native sheet/fragment too, so the next tap can enter it again.
+        if (runCatching(page.dismiss).getOrDefault(false)) {
+            hideEmbeddedPage(activity, page.identity)
+        }
+    }
+
     fun suppressHorizontalPlayer(activity: Activity) {
         if (!isHorizontalPlayerActivityName(activity.javaClass.name)) return
         runCatching {
@@ -190,7 +235,7 @@ internal object CoverPlayerInjector {
 
     private fun registerBackCallback(activity: Activity) {
         if (backCallbacks.containsKey(activity)) return
-        val callback = OnBackInvokedCallback(::dismissToMusicHome)
+        val callback = OnBackInvokedCallback { dismissPlayer(activity) }
         activity.onBackInvokedDispatcher.registerOnBackInvokedCallback(
             OnBackInvokedDispatcher.PRIORITY_OVERLAY,
             callback,
@@ -207,6 +252,7 @@ internal object CoverPlayerInjector {
         unregisterBackCallback(activity)
         overlayLayers.remove(activity)?.stop()
         overlays.remove(activity)?.let(decor::removeView)
+        windowLayouts.remove(activity)?.restore()
         originalOrientations.remove(activity)?.let { original ->
             if (!activity.isFinishing && !activity.isDestroyed) activity.requestedOrientation = original
         }
@@ -218,8 +264,10 @@ internal object CoverPlayerInjector {
         val decor = activity.window.peekDecorView() as? ViewGroup
         windowObservers.remove(activity)?.stop()
         overlays.remove(activity)?.let { decor?.removeView(it) }
+        windowLayouts.remove(activity)?.restore()
         originalOrientations.remove(activity)
         suppressed.remove(activity)
+        embeddedPages.remove(activity)
         CoverHomeAppearance.onDestroyed(activity)
     }
 

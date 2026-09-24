@@ -13,8 +13,8 @@ android {
         applicationId = "com.jaco.musicenhance"
         minSdk = 34
         targetSdk = 37
-        versionCode = 43
-        versionName = "2.1.5"
+        versionCode = 54
+        versionName = "2.2.0"
     }
 
     val releaseKeystore = providers.environmentVariable("MUSICENHANCE_KEYSTORE").orNull

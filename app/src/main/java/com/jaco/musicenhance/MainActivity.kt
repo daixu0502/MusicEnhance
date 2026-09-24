@@ -167,13 +167,14 @@ private fun MusicAppPreferences(profile: MusicAppProfile) {
     val prefs = XposedServiceState.prefs
     val connected = XposedServiceState.isConnected
     var enabled by remember(prefs, profile.packageName) {
-        mutableStateOf(prefs?.getBoolean(profile.enabledPreference, false) ?: false)
+        mutableStateOf(Prefs.isHookEnabled(prefs, profile.enabledPreference))
     }
     Card(modifier = Modifier.fillMaxWidth()) {
         SwitchPreference(
             title = "Hook ${profile.displayName}",
             summary = when {
                 !connected -> "请先在 LSPosed 中启用模块"
+                profile.experimental -> "实验性适配，尚未完成真机验证；开关修改后需重启该音乐应用"
                 enabled -> "已启用；重启 ${profile.displayName} 后应用外屏播放器"
                 else -> "关闭后重启 ${profile.displayName} 即可恢复原界面"
             },

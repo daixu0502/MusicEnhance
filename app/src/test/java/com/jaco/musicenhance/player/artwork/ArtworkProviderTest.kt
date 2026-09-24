@@ -19,7 +19,7 @@ import org.robolectric.annotation.Config
 class ArtworkProviderTest {
     @Test fun metadataOnlyPlayerDoesNotPromiseAnAsyncArtworkSource() {
         val controller = MediaSessionPlayerController("Other player")
-        assertFalse(controller.hasArtworkProvider)
+        assertFalse(controller.holdPreviousArtworkWhileLoading)
         assertNull(controller.verifiedArtwork(PlayerSnapshot.Empty))
         controller.release()
     }
@@ -41,7 +41,7 @@ class ArtworkProviderTest {
             override fun release() { lyricsReleases++ }
         }
         val controller = MediaSessionPlayerController("Other player", lyrics, artwork)
-        assertTrue(controller.hasArtworkProvider)
+        assertTrue(controller.holdPreviousArtworkWhileLoading)
         assertSame(image, controller.verifiedArtwork(song))
         assertSame(song, receivedSong)
         controller.release()
