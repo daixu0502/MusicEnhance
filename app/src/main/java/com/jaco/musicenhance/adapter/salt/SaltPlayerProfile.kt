@@ -11,5 +11,4 @@ internal val SaltPlayerProfile = MusicAppProfile(
     // The native player is a Compose sheet inside the library Activity.
     playerActivityMatcher = { false },
     horizontalActivityMatcher = { false },
-    experimental = true,
 )

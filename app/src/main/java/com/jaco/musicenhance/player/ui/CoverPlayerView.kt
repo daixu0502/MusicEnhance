@@ -14,6 +14,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.Surface
+import android.view.TouchDelegate
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -394,12 +395,17 @@ internal class CoverPlayerView(
             dismissButton.rotation = if (cameraRight) 0f else 180f
             val buttonSize = (min(width, height) * 0.075f).toInt()
             val cornerInset = (width * 0.025f).toInt()
-            setFrame(
+            val buttonLeft = if (cameraRight) cornerInset else width - buttonSize - cornerInset
+            setFrame(dismissButton, buttonLeft, cornerInset, buttonSize, buttonSize)
+            val touchExpansion = dp(DISMISS_TOUCH_EXPANSION_DP)
+            touchDelegate = TouchDelegate(
+                Rect(
+                    (buttonLeft - touchExpansion).coerceAtLeast(0),
+                    (cornerInset - touchExpansion).coerceAtLeast(0),
+                    (buttonLeft + buttonSize + touchExpansion).coerceAtMost(width),
+                    (cornerInset + buttonSize + touchExpansion).coerceAtMost(height),
+                ),
                 dismissButton,
-                if (cameraRight) cornerInset else width - buttonSize - cornerInset,
-                cornerInset,
-                buttonSize,
-                buttonSize,
             )
         }
 
@@ -618,5 +624,6 @@ internal class CoverPlayerView(
     private companion object {
         const val UI_TICK_MS = 50L
         const val MODE_TRANSITION_DURATION_MS = 500L
+        const val DISMISS_TOUCH_EXPANSION_DP = 8
     }
 }

@@ -11,5 +11,4 @@ internal val KugouLitePlayerProfile = MusicAppProfile(
     playerActivityMatcher = { it == KugouLitePlayerLauncher.ACTIVITY_NAME },
     horizontalActivityMatcher = { false },
     activityNamespaces = setOf("com.kugou.android"),
-    experimental = true,
 )

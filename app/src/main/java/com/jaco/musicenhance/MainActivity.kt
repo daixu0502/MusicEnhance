@@ -10,6 +10,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -125,11 +132,46 @@ private fun MainScreen(
         onDispose { }
     }
 
-    if (showMusicAppHooks) {
-        MusicAppHookScreen(onBack = { showMusicAppHooks = false })
-        return
+    AnimatedContent(
+        targetState = showMusicAppHooks,
+        modifier = Modifier.fillMaxSize(),
+        transitionSpec = {
+            val enter = if (targetState) {
+                slideInHorizontally(tween(SETTINGS_TRANSITION_DURATION_MS)) { it }
+            } else {
+                slideInHorizontally(tween(SETTINGS_TRANSITION_DURATION_MS)) { -it / 4 }
+            } + fadeIn(tween(SETTINGS_TRANSITION_DURATION_MS))
+            val exit = if (targetState) {
+                slideOutHorizontally(tween(SETTINGS_TRANSITION_DURATION_MS)) { -it / 4 }
+            } else {
+                slideOutHorizontally(tween(SETTINGS_TRANSITION_DURATION_MS)) { it }
+            } + fadeOut(tween(SETTINGS_TRANSITION_DURATION_MS))
+            enter togetherWith exit
+        },
+        label = "settings-page",
+    ) { hooksVisible ->
+        if (hooksVisible) {
+            MusicAppHookScreen(onBack = { showMusicAppHooks = false })
+        } else {
+            MainSettingsScreen(
+                connected = connected,
+                deviceName = deviceName,
+                installedPackages = installedPackages,
+                onOpenMusicAppHooks = { showMusicAppHooks = true },
+                onOpenLSPosed = onOpenLSPosed,
+            )
+        }
     }
+}
 
+@Composable
+private fun MainSettingsScreen(
+    connected: Boolean,
+    deviceName: String?,
+    installedPackages: Set<String>,
+    onOpenMusicAppHooks: () -> Unit,
+    onOpenLSPosed: () -> Unit,
+) {
     val scrollBehavior = MiuixScrollBehavior()
     val listState = rememberLazyListState()
 
@@ -159,7 +201,7 @@ private fun MainScreen(
                             title = "音乐应用 Hook",
                             summary = if (connected) "分别管理各音乐播放器；修改后需重启对应音乐应用"
                                 else "请先在 LSPosed 中启用模块",
-                            onClick = { showMusicAppHooks = true },
+                            onClick = onOpenMusicAppHooks,
                         )
                     }
 
@@ -239,9 +281,8 @@ private fun MusicAppPreference(profile: MusicAppProfile) {
         title = "Hook ${profile.displayName}",
         summary = when {
             !connected -> "请先在 LSPosed 中启用模块"
-            profile.experimental -> "实验性适配，尚未完成真机验证；开关修改后需重启该音乐应用"
-            enabled -> "已启用；重启 ${profile.displayName} 后应用外屏播放器"
-            else -> "关闭后重启 ${profile.displayName} 即可恢复原界面"
+            enabled -> "已启用；重启 ${profile.displayName} 后生效"
+            else -> "已关闭；重启 ${profile.displayName} 后生效"
         },
         checked = enabled,
         onCheckedChange = { checked ->
@@ -365,3 +406,5 @@ private fun DeviceCard(deviceName: String?, installedPackages: Set<String>) {
         }
     }
 }
+
+private const val SETTINGS_TRANSITION_DURATION_MS = 320

@@ -11,5 +11,4 @@ internal val ApplePlayerProfile = MusicAppProfile(
     // Audio is a bottom sheet in MainContentActivity. Video activities must remain native.
     playerActivityMatcher = { false },
     horizontalActivityMatcher = { false },
-    experimental = true,
 )

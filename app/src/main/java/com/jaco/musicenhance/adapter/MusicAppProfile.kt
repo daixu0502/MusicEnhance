@@ -10,7 +10,6 @@ internal data class MusicAppProfile(
     private val playerActivityMatcher: (String) -> Boolean,
     private val horizontalActivityMatcher: (String) -> Boolean,
     private val activityNamespaces: Set<String> = setOf(packageName),
-    val experimental: Boolean = false,
     val hideCoverHomeNavigationBar: Boolean = false,
 ) {
     fun isHomeActivity(className: String?): Boolean = ownsActivity(className) && className in homeActivityNames

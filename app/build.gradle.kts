@@ -14,7 +14,7 @@ android {
         minSdk = 34
         targetSdk = 37
         versionCode = 67
-        versionName = "2.6.0"
+        versionName = "2.6.1"
     }
 
     val releaseKeystore = providers.environmentVariable("MUSICENHANCE_KEYSTORE").orNull

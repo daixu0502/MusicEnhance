@@ -6,7 +6,7 @@ import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.os.Bundle
 import android.view.Window
-import android.window.OnBackInvokedCallback
+import android.window.OnBackAnimationCallback
 import android.window.OnBackInvokedDispatcher
 import com.jaco.musicenhance.player.ui.CoverPlayerView
 import java.lang.ref.WeakReference
@@ -17,7 +17,12 @@ internal class EnhancedPlayerActivity : Activity() {
     private var player: CoverPlayerView? = null
     private var layout: PlayerWindowLayout? = null
     private var registeredBack = false
-    private val back = OnBackInvokedCallback { dismissPlayer() }
+    private val back = object : OnBackAnimationCallback {
+        // Owning the predictive phase keeps this opaque Activity in place instead of allowing
+        // the system gesture animation to reveal the native player underneath. The common close
+        // path still runs only after the gesture is committed; cancellation needs no rollback.
+        override fun onBackInvoked() = dismissPlayer()
+    }
 
     // This cover-only Activity supports 0°/180° so the camera rail never rotates onto the controls.
     @SuppressLint("SourceLockedOrientationActivity")
@@ -57,6 +62,14 @@ internal class EnhancedPlayerActivity : Activity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (session?.canShow(this) != true) dismissPlayer() else player?.refreshDisplayLayout()
+    }
+
+    @SuppressLint("GestureBackNavigation") // Host manifest opt-out still requires legacy dispatch.
+    @Suppress("OVERRIDE_DEPRECATION")
+    override fun onBackPressed() {
+        // The borrowed host component may opt out of OnBackInvokedCallback. Its gesture then
+        // arrives here as legacy back; Activity's default would finish before native dismissal.
+        dismissPlayer()
     }
 
     private fun dismissPlayer() {
