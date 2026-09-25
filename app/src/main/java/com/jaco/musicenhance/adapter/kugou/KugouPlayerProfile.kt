@@ -12,5 +12,4 @@ internal val KugouPlayerProfile = MusicAppProfile(
     homeActivityNames = setOf("com.kugou.android.app.MediaActivity"),
     playerActivityMatcher = { it == KUGOU_FLIP_ACTIVITY },
     horizontalActivityMatcher = { false },
-    experimental = true,
 )

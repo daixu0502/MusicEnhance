@@ -11,5 +11,4 @@ internal val KuwoPlayerProfile = MusicAppProfile(
     playerActivityMatcher = { it == "cn.kuwo.mod.nowplaynew.flip.MIUIFlipPlayPageActivity" },
     horizontalActivityMatcher = { false },
     activityNamespaces = setOf("cn.kuwo"),
-    experimental = true,
 )

@@ -218,7 +218,10 @@ internal object SystemCoverHook {
         service.declaredMethods.filter { it.name == "relayoutWindow" }.forEachIndexed { index, method ->
             module.installHook(method, "musicenhance.player.relayout.$index") { chain ->
                 var changedOwner: ActivityInfo? = null
+                // Dialogs and app-owned toasts share the ActivityRecord. Their unmarked titles
+                // must not release the fullscreen ownership of its still-visible main window.
                 val attrs = chain.args.filterIsInstance<WindowManager.LayoutParams>().firstOrNull()
+                    ?.takeIf { it.type == WindowManager.LayoutParams.TYPE_BASE_APPLICATION }
                 val profile = attrs?.packageName?.let(MusicAppRegistry::find)
                 if (profile != null) {
                     safeHook("enhanced player bounds refresh") {
