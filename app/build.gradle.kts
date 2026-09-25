@@ -14,7 +14,11 @@ android {
         minSdk = 34
         targetSdk = 37
         versionCode = 67
-        versionName = "2.7.1"
+        versionName = "2.7.2"
+
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     val releaseKeystore = providers.environmentVariable("MUSICENHANCE_KEYSTORE").orNull
