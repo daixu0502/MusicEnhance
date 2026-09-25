@@ -39,6 +39,9 @@ internal object PlayerProcessBridge {
     private const val EXTRA_CONTROL_TITLE = "control_title"
     private const val EXTRA_SPECTRUM_FRAMES = "spectrum_frames"
     private const val EXTRA_SPECTRUM_FRAME_MS = "spectrum_frame_ms"
+    private const val EXTRA_SPECTRUM_START_NANOS = "spectrum_start_nanos"
+    private const val EXTRA_SPECTRUM_STREAM_ID = "spectrum_stream_id"
+    private const val EXTRA_SPECTRUM_CLEAR = "spectrum_clear"
     private const val MAX_ARTWORK_SIDE = 1_280
     private const val FALLBACK_ARTWORK_SIDE = 960
     private const val MAX_ARTWORK_BYTES = 800_000
@@ -65,13 +68,26 @@ internal object PlayerProcessBridge {
                         intent.getStringExtra(EXTRA_COMMAND).orEmpty(),
                         intent.getLongExtra(EXTRA_POSITION, 0L),
                     )
-                    ACTION_SPECTRUM -> SpectrumEngine.acceptRemote(
-                        intent.getFloatArrayExtra(EXTRA_SPECTRUM_FRAMES) ?: FloatArray(0),
-                        intent.getIntExtra(
-                            EXTRA_SPECTRUM_FRAME_MS,
-                            SpectrumEngine.FRAME_DURATION_MS,
-                        ),
-                    )
+                    ACTION_SPECTRUM -> {
+                        val streamId = intent.getLongExtra(EXTRA_SPECTRUM_STREAM_ID, 0L)
+                        if (intent.getBooleanExtra(EXTRA_SPECTRUM_CLEAR, false)) {
+                            SpectrumEngine.clearRemoteStream(streamId)
+                        } else {
+                            SpectrumEngine.acceptRemote(
+                                intent.getFloatArrayExtra(EXTRA_SPECTRUM_FRAMES)
+                                    ?: FloatArray(0),
+                                intent.getIntExtra(
+                                    EXTRA_SPECTRUM_FRAME_MS,
+                                    SpectrumEngine.FRAME_DURATION_MS,
+                                ),
+                                intent.getLongExtra(
+                                    EXTRA_SPECTRUM_START_NANOS,
+                                    android.os.SystemClock.elapsedRealtimeNanos(),
+                                ),
+                                streamId,
+                            )
+                        }
+                    }
                     ACTION_REQUEST_STATE -> MediaSessionStore.republishLocalSnapshot()
                 }
             }
@@ -125,13 +141,29 @@ internal object PlayerProcessBridge {
         )
     }
 
-    fun publishSpectrum(frames: FloatArray, frameDurationMs: Int) {
+    fun publishSpectrum(
+        frames: FloatArray,
+        frameDurationMs: Int,
+        startAtNanos: Long,
+        streamId: Long,
+    ) {
         if (frames.isEmpty()) return
         val appContext = processApplication ?: return
         appContext.sendBroadcast(
             Intent(ACTION_SPECTRUM).setPackage(appContext.packageName)
                 .putExtra(EXTRA_SPECTRUM_FRAMES, frames)
-                .putExtra(EXTRA_SPECTRUM_FRAME_MS, frameDurationMs),
+                .putExtra(EXTRA_SPECTRUM_FRAME_MS, frameDurationMs)
+                .putExtra(EXTRA_SPECTRUM_START_NANOS, startAtNanos)
+                .putExtra(EXTRA_SPECTRUM_STREAM_ID, streamId),
+        )
+    }
+
+    fun clearSpectrum(streamId: Long) {
+        val appContext = processApplication ?: return
+        appContext.sendBroadcast(
+            Intent(ACTION_SPECTRUM).setPackage(appContext.packageName)
+                .putExtra(EXTRA_SPECTRUM_STREAM_ID, streamId)
+                .putExtra(EXTRA_SPECTRUM_CLEAR, true),
         )
     }
 

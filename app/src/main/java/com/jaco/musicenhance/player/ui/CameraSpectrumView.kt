@@ -68,9 +68,15 @@ internal class CameraSpectrumView(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val targetBass = if (playing) bassLevel() else 0f
-        val bassAttack = if (targetBass > smoothBass) 0.72f else 0.18f
-        if (playing) smoothBass += (targetBass - smoothBass) * bassAttack
-        else smoothBass = pauseRelease.level(SystemClock.elapsedRealtime())
+        if (playing) {
+            smoothBass = if (targetBass >= smoothBass) {
+                targetBass
+            } else {
+                smoothBass + (targetBass - smoothBass) * 0.18f
+            }
+        } else {
+            smoothBass = pauseRelease.level(SystemClock.elapsedRealtime())
+        }
 
         val verticalPill = height >= width
         cameraPill.set(0f, 0f, width.toFloat(), height.toFloat())

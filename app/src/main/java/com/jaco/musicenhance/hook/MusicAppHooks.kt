@@ -127,15 +127,42 @@ internal object MusicAppHooks {
                     ) { chain ->
                         val outermostWrite = SpectrumEngine.enterAudioWrite()
                         try {
-                            if (outermostWrite) {
+                            val pendingCapture = if (outermostWrite) {
                                 runCatching {
-                                    SpectrumEngine.capture(chain.thisObject as? AudioTrack, chain.args)
-                                }
+                                    SpectrumEngine.prepareCapture(
+                                        chain.thisObject as? AudioTrack,
+                                        chain.args,
+                                    )
+                                }.getOrNull()
+                            } else {
+                                null
                             }
-                            chain.proceed()
+                            val result = chain.proceed()
+                            if (outermostWrite) {
+                                SpectrumEngine.commitCapture(pendingCapture, result as? Int ?: 0)
+                            }
+                            result
                         } finally {
                             SpectrumEngine.exitAudioWrite()
                         }
+                    }
+                }
+            }
+
+        AudioTrack::class.java.declaredMethods
+            .filter { method ->
+                method.name in setOf("stop", "flush", "release") && method.parameterCount == 0
+            }
+            .forEachIndexed { index, method ->
+                safeHook("AudioTrack.${method.name}[$index]") {
+                    method.isAccessible = true
+                    module.installHook(
+                        method,
+                        "musicenhance.audio.${method.name}.$index",
+                    ) { chain ->
+                        val result = chain.proceed()
+                        SpectrumEngine.reset(chain.thisObject as? AudioTrack)
+                        result
                     }
                 }
             }
