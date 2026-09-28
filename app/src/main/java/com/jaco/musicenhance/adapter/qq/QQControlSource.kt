@@ -7,7 +7,7 @@ import com.jaco.musicenhance.player.model.PlayerControlState
 import java.lang.reflect.Modifier
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** QQ Music 20.8.5.8's own service and collection store. Never opens a mode popup. */
+/** QQ Music 20.8.5.8 / 20.9.0.8 service and collection store. Never opens a mode popup. */
 internal class QQControlSource(private val classLoader: ClassLoader) {
     @Volatile private var state = PlayerControlState()
     private val refreshing = AtomicBoolean()
@@ -89,11 +89,12 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
 
     private class Api(private val classLoader: ClassLoader) {
         private fun type(name: String) = Class.forName(name, false, classLoader)
-        private val ipc = type("com.tencent.qqmusic.common.ipc.IPlayProcessMethods")
+        private val process = QQPlayProcessApi(classLoader)
+        private val ipc = process.type
         private val song = type("com.tencent.qqmusicplayerprocess.songinfo.SongInfo")
         private val users = type("com.tencent.qqmusic.business.userdata.UserDataManager")
         private val service = type("com.tencent.qqmusicplayerprocess.servicenew.IQQPlayerServiceNew")
-        val getPlayEnvironment = type("com.tencent.qqmusic.common.ipc.MusicProcess").getMethod("playEnv")
+        val getPlayEnvironment = process.getEnvironment
         val getPlayMode = ipc.getMethod("getPlayMode")
         val getPlaySong = ipc.getMethod("getPlaySong")
         val songId = song.getMethod("C3")

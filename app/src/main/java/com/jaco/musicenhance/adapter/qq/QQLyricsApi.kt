@@ -4,14 +4,15 @@ import com.jaco.musicenhance.player.model.LyricLine
 import com.jaco.musicenhance.player.model.LyricTimeline
 import java.lang.reflect.Proxy
 
-/** QQ 20.8.5.8 reflection only. No host classes or opaque objects escape the QQ adapter. */
+/** QQ 20.8.5.8 / 20.9.0.8 reflection only. Host objects stay inside the QQ adapter. */
 internal class QQLyricsApi(private val classLoader: ClassLoader) {
     data class Song(val nativeValue: Any, val id: Long)
 
     private fun hostClass(name: String) = Class.forName(name, false, classLoader)
     private val songClass = hostClass("com.tencent.qqmusicplayerprocess.songinfo.SongInfo")
-    private val playEnvironment = hostClass("com.tencent.qqmusic.common.ipc.MusicProcess").getMethod("playEnv")
-    private val getPlaySong = hostClass("com.tencent.qqmusic.common.ipc.IPlayProcessMethods").getMethod("getPlaySong")
+    private val process = QQPlayProcessApi(classLoader)
+    private val playEnvironment = process.getEnvironment
+    private val getPlaySong = process.type.getMethod("getPlaySong")
     private val songTitle = songClass.getMethod("j3")
     private val songId = songClass.getMethod("C3")
     private val loaderClass = hostClass("com.tencent.qqmusic.business.lyricnew.load.manager.m")

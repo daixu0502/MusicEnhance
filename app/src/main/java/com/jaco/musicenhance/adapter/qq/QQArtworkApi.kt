@@ -4,11 +4,12 @@ import com.jaco.musicenhance.player.artwork.PlaylistArtworkWindow
 import com.jaco.musicenhance.player.model.RepeatMode
 import com.jaco.musicenhance.adapter.qq.QQArtworkSource.Song
 
-/** QQ 20.8.5.8 private song and artwork URL methods; no network or UI state. */
+/** QQ 20.8.5.8 / 20.9.0.8 private song and artwork URL methods; no network or UI state. */
 internal class QQArtworkApi(classLoader: ClassLoader) : QQArtworkSource {
     private val songClass = Class.forName("com.tencent.qqmusicplayerprocess.songinfo.SongInfo", false, classLoader)
-    private val getPlayEnvironment = Class.forName("com.tencent.qqmusic.common.ipc.MusicProcess", false, classLoader).getMethod("playEnv")
-    private val playMethods = Class.forName("com.tencent.qqmusic.common.ipc.IPlayProcessMethods", false, classLoader)
+    private val process = QQPlayProcessApi(classLoader)
+    private val getPlayEnvironment = process.getEnvironment
+    private val playMethods = process.type
     private val getPlaySong = playMethods.getMethod("getPlaySong")
     private val songTitle = songClass.getMethod("j3")
     private val songId = songClass.getMethod("C3")

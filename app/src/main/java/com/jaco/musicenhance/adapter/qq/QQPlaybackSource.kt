@@ -8,7 +8,7 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-/** QQ 20.8.5.8's lyric-page controls, independent of the MediaSession command queue. */
+/** QQ 20.8.5.8 / 20.9.0.8 lyric-page controls, independent of the MediaSession command queue. */
 internal class QQPlaybackSource(
     loader: ClassLoader,
     private val worker: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { task ->
@@ -70,8 +70,9 @@ internal class QQPlaybackSource(
     private fun reportFailure(error: Throwable) = moduleInfo("QQ lyric seek failed: ${error.cause ?: error}")
 
     private class Api(loader: ClassLoader) {
-        private val environmentType = loader.loadClass("com.tencent.qqmusic.common.ipc.IPlayProcessMethods")
-        private val getEnvironment = loader.loadClass("com.tencent.qqmusic.common.ipc.MusicProcess").getMethod("playEnv")
+        private val process = QQPlayProcessApi(loader)
+        private val environmentType = process.type
+        private val getEnvironment = process.getEnvironment
         private val getSong = environmentType.getMethod("getPlaySong")
         private val getState = environmentType.getMethod("getPlayState")
         private val songType = loader.loadClass("com.tencent.qqmusicplayerprocess.songinfo.SongInfo")

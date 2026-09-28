@@ -63,7 +63,7 @@ QQ 音乐、Apple Music、酷我、酷狗普通版和酷狗概念版共用封面
 
 | 应用 | 适配版本 | 包名 |
 | --- | --- | --- |
-| QQ 音乐 | 20.8.5.8 | `com.tencent.qqmusic` |
+| QQ 音乐 | 20.8.5.8、20.9.0.8（新版待真机验证） | `com.tencent.qqmusic` |
 | Apple Music | 6.5.2 | `com.apple.android.music` |
 | 酷我音乐 | 12.2.2.4 | `cn.kuwo.player` |
 | 酷狗概念版 | 5.2.9 | `com.kugou.android.lite` |
