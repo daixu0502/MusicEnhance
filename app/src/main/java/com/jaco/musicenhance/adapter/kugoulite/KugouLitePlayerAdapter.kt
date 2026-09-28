@@ -27,8 +27,8 @@ internal object KugouLitePlayerAdapter : MusicPlayerAdapter {
             artwork = PlaylistArtworkProvider(
                 "Kugou Lite", { KugouLiteArtworkSource(activity.classLoader) },
                 ArtworkDiskCache(File(activity.cacheDir, "musicenhance-artwork")),
+                readNativeArtwork = { NativePlayerViews.findArtwork(nativeRoot) },
             ),
-            readArtwork = { NativePlayerViews.findArtwork(nativeRoot) },
             repeatApi = { KugouLiteRepeatSource(activity.classLoader) },
             favorite = PolledFavoriteControl({ KugouLiteFavoriteSource(activity) }),
         )

@@ -22,8 +22,6 @@ internal object KugouPlayerAdapter : MusicPlayerAdapter {
             lyrics = CachedNativeLyricsProvider(lyrics::readLyrics),
             artwork = PlaylistArtworkProvider("Kugou", { KugouArtworkSource(activity.classLoader) },
                 ArtworkDiskCache(File(activity.cacheDir, "musicenhance-artwork"))),
-            // FlipPlayerDelegate applies blur to native backgrounds. Use media art and original URLs.
-            readArtwork = { null },
             repeatApi = { KugouRepeatSource(activity.classLoader) },
             favorite = PolledFavoriteControl({ KugouFavoriteSource(activity, nativeRoot) }),
         )

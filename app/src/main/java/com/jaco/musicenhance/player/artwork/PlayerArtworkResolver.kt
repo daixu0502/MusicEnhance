@@ -15,8 +15,20 @@ internal class PlayerArtworkResolver(
     private var background: Bitmap? = null
     private var nativeArtwork: Bitmap? = null
     private var nextNativePollAtMs = 0L
+    private var lastProvidedArtwork: Bitmap? = null
 
     fun resolve(snapshot: PlayerSnapshot, nowMs: Long): Result {
+        if (provider.ownsArtworkSelection) {
+            val image = provider.snapshot(snapshot)?.takeUnless { it.isRecycled }
+            if (image == null && lastProvidedArtwork != null) {
+                transition.begin(lastProvidedArtwork, nowMs, PREVIEW_WAIT_MS)
+            }
+            // Bridge only the background across a short asynchronous cache/preview read.
+            // Never publish the outgoing image as the new song's thumbnail, extend the
+            // deadline on repeated null results, or keep it indefinitely for a missing cover.
+            lastProvidedArtwork = image
+            return Result(transition.background(image, image != null, nowMs), image)
+        }
         if (selection.updateTrack(snapshot)) {
             transition.begin(background, nowMs)
             nativeArtwork = null
@@ -36,6 +48,7 @@ internal class PlayerArtworkResolver(
     }
 
     private companion object {
+        const val PREVIEW_WAIT_MS = 350L
         const val NATIVE_ARTWORK_POLL_MS = 1_500L
     }
 }

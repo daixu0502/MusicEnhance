@@ -26,8 +26,8 @@ internal object KuwoPlayerAdapter : MusicPlayerAdapter {
             artwork = PlaylistArtworkProvider(
                 "Kuwo", { KuwoArtworkSource(activity.classLoader) },
                 ArtworkDiskCache(File(activity.cacheDir, "musicenhance-artwork")),
+                readNativeArtwork = { data.readArtwork(nativeRoot) },
             ),
-            readArtwork = { data.readArtwork(nativeRoot) },
             repeatApi = { KuwoRepeatSource(activity.classLoader) },
         )
         return session.copy(

@@ -7,6 +7,7 @@ import com.jaco.musicenhance.adapter.NativePlayerViews
 import com.jaco.musicenhance.player.PlayerDataSource
 import com.jaco.musicenhance.player.PlayerSession
 import com.jaco.musicenhance.player.artwork.ArtworkDiskCache
+import com.jaco.musicenhance.player.artwork.PlaylistArtworkProvider
 import com.jaco.musicenhance.player.media.MediaSessionDataSource
 import java.io.File
 
@@ -16,11 +17,11 @@ internal object QQPlayerAdapter : MusicPlayerAdapter {
         val controls = QQControlSource(activity.classLoader)
         val playback = QQPlaybackSource(activity.classLoader)
         val media = MediaSessionDataSource
+        val artworkFilter = QQArtworkFilter(activity.resources)
         return PlayerSession(
             profile.displayName,
             object : PlayerDataSource by media {
                 override fun controlState() = controls.controlState()
-                override fun nativeArtwork() = NativePlayerViews.findArtwork(nativeRoot)
             },
             media.actions.copy(
                 seekAndPlay = { playback.seekAndPlay(it, media.snapshot()) },
@@ -28,7 +29,12 @@ internal object QQPlayerAdapter : MusicPlayerAdapter {
                 toggleFavorite = { NativePlayerViews.clickControl(nativeRoot, FAVORITE_KEYWORDS) || media.actions.toggleFavorite() },
             ),
             QQLyricsProvider(activity.classLoader),
-            QQArtworkProvider(activity.classLoader, diskCache = ArtworkDiskCache(File(activity.cacheDir, "musicenhance-artwork"))),
+            PlaylistArtworkProvider("QQ Music", { QQArtworkApi(activity.classLoader) },
+                ArtworkDiskCache(File(activity.cacheDir, "musicenhance-artwork")),
+                // QQ's page also contains dynamically generated disc/blur bitmaps without
+                // resource names. Its MediaSession publishes the unadorned native cover;
+                // scanning arbitrary ImageViews can mistake a theme background for that cover.
+                acceptNativeArtwork = artworkFilter::accepts),
             onRelease = playback::release,
         )
     }

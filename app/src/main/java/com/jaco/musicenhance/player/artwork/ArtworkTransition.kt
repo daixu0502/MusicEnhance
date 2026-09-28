@@ -7,9 +7,9 @@ internal class ArtworkTransition {
     private var previousBackground: Bitmap? = null
     private var expiresAtMs = 0L
 
-    fun begin(displayed: Bitmap?, nowMs: Long) {
+    fun begin(displayed: Bitmap?, nowMs: Long, maxWaitMs: Long = MAX_WAIT_MS) {
         previousBackground = displayed?.takeUnless { it.isRecycled }
-        expiresAtMs = nowMs + MAX_WAIT_MS
+        expiresAtMs = nowMs + maxWaitMs
     }
 
     fun background(current: Bitmap?, ready: Boolean, nowMs: Long): Bitmap? {

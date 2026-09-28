@@ -11,12 +11,11 @@ internal object AppleArtworkAddresses {
         if (uri.scheme != "https" || uri.host.isNullOrBlank()) return emptyList()
         // Only Apple's image CDN has this sizing contract. Other artwork URLs remain untouched.
         if (!uri.host.endsWith(".mzstatic.com")) return listOf(original)
-        val template = resolveTemplate(original, 1200)
-        val high = size.replace(template) { match ->
-            if (match.groupValues[1].toInt() < 1200) "1200x1200" else match.value
-        }
-        val fallback = resolveTemplate(original, 600).replace("/0x0bb", "/600x600bb")
-        return listOf(high, fallback).distinct()
+        val originalSize = size.find(original)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val sizes = (listOf(originalSize).filter { it > 0 } + listOf(1200, 600, 300, 150)).distinct().sortedDescending()
+        return sizes.map { pixels ->
+            size.replace(resolveTemplate(original, pixels)) { "${pixels}x$pixels" }
+        }.distinct()
     }
 
     // These placeholders are also expanded by Apple's common.coil.e request interceptor.

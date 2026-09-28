@@ -17,6 +17,18 @@ internal object ArtworkLoader {
 
     fun cached(address: String): Bitmap? = cache.get(address)?.takeUnless { it.isRecycled }
 
+    /** Worker-only cache read. A missing resolved URL must never trigger a low-quality download. */
+    fun loadCached(address: String, isCurrent: () -> Boolean, diskCache: ArtworkDiskCache?, keepInMemory: Boolean = true): Bitmap? {
+        if (!isCurrent()) return null
+        cached(address)?.let { return it }
+        val bytes = diskCache?.read(address) ?: return null
+        val bitmap = decode(bytes)
+        if (bitmap == null) diskCache.remove(address)
+        if (!isCurrent()) return null
+        if (bitmap != null && keepInMemory) cache.put(address, bitmap)
+        return bitmap
+    }
+
     fun load(
         address: String,
         isCurrent: () -> Boolean,
