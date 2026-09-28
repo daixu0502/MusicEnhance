@@ -591,6 +591,7 @@ internal class CoverPlayerView(
             RepeatMode.SINGLE_LOOP -> "单曲循环"
             RepeatMode.SHUFFLE -> "随机播放"
             RepeatMode.SEQUENTIAL -> "顺序播放"
+            RepeatMode.SINGLE_PLAY -> "单次播放"
             RepeatMode.UNKNOWN -> "循环模式"
         }
     }

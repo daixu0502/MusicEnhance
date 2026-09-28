@@ -10,6 +10,7 @@ object Prefs {
     const val HOOK_KUGOU_STANDARD_MUSIC = "hook_kugou_standard_music"
     const val HOOK_KUWO_MUSIC = "hook_kuwo_music"
     const val HOOK_SALT_MUSIC = "hook_salt_music"
+    const val HOOK_LXX_MUSIC = "hook_lxx_music"
     const val KEEP_COVER_SCREEN_ON = "keep_cover_screen_on"
 
     // The first concept-edition build used this key. Never reuse it for standard Kugou.

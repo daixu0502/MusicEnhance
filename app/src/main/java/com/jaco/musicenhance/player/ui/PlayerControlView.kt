@@ -76,6 +76,7 @@ internal class PlayerControlView(
                 Kind.REPEAT -> when (repeatMode) {
                     RepeatMode.SHUFFLE -> drawShuffle(canvas)
                     RepeatMode.SEQUENTIAL -> drawOrder(canvas)
+                    RepeatMode.SINGLE_PLAY -> drawSinglePlay(canvas)
                     else -> drawRepeat(canvas)
                 }
                 Kind.PREVIOUS -> drawSkip(canvas, false)
@@ -210,6 +211,17 @@ internal class PlayerControlView(
             path.lineTo(12.5f, 14.5f)
             canvas.drawPath(path, paint)
         }
+    }
+
+    private fun drawSinglePlay(canvas: Canvas) {
+        path.reset()
+        path.moveTo(5f, 9f)
+        path.lineTo(8f, 6f)
+        path.lineTo(8f, 18f)
+        path.moveTo(5f, 18f)
+        path.lineTo(11f, 18f)
+        canvas.drawPath(path, paint)
+        canvas.drawRoundRect(15f, 8f, 22f, 16f, 1f, 1f, paint)
     }
 
     private fun drawShuffle(canvas: Canvas) {

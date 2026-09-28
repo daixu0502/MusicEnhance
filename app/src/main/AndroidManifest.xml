@@ -9,6 +9,7 @@
         <package android:name="com.kugou.android" />
         <package android:name="cn.kuwo.player" />
         <package android:name="com.salt.music" />
+        <package android:name="com.lxwalnut.music.mobile" />
         <package android:name="org.lsposed.manager" />
     </queries>
 

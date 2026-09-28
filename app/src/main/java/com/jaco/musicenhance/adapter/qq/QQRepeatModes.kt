@@ -23,6 +23,6 @@ internal object QQRepeatModes {
         RepeatMode.LIST_LOOP -> SINGLE_LOOP
         RepeatMode.SINGLE_LOOP -> SHUFFLE
         RepeatMode.SHUFFLE -> SEQUENTIAL
-        RepeatMode.UNKNOWN -> LIST_LOOP
+        RepeatMode.UNKNOWN, RepeatMode.SINGLE_PLAY -> LIST_LOOP
     }
 }
