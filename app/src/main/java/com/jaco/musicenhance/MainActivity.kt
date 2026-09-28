@@ -210,8 +210,7 @@ private fun MainSettingsScreen(
                     Card(modifier = Modifier.fillMaxWidth()) {
                         ArrowPreference(
                             title = "LSPosed 作用域",
-                            summary = "API 102 · 系统框架 · " +
-                                MusicAppRegistry.profiles.joinToString(" · ") { it.displayName } + " · 系统界面",
+                            summary = "API 102 · 系统框架 · 系统桌面 · 各音乐APP",
                             onClick = onOpenLSPosed,
                         )
                     }
