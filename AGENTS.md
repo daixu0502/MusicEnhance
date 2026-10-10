@@ -6,7 +6,7 @@
 
 - 项目名称为「音乐外屏增强」，面向 Xiaomi MIX Flip / MIX Flip 2，使用现代 libxposed API 102。
 - 增强播放器在宿主音乐应用进程内运行，由统一的 `EnhancedPlayerActivity` 承载。模块主程序负责配置，不承担音乐播放。
-- 当前适配目录为 `qq`、`apple`、`kuwo`、`kugoulite`、`kugou`、`salt`、`lxx`。酷狗普通版与酷狗概念版独立适配，不混用包名、开关和私有接口。
+- 当前适配目录为 `qq`、`apple`、`kuwo`、`kugoulite`、`kugou`、`salt`、`lxx`、`spotify`。酷狗普通版与酷狗概念版独立适配，不混用包名、开关和私有接口。
 - 应用名单以 `MusicAppRegistry`、`MusicAppAdapters` 和静态作用域为准；版本与 SDK 以 `app/build.gradle.kts` 为准，适配版本见 README。
 
 ## 开始修改前

@@ -4,10 +4,13 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.Color
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.Window
 import android.window.OnBackAnimationCallback
 import android.window.OnBackInvokedDispatcher
+import androidx.core.graphics.drawable.toDrawable
 import com.jaco.musicenhance.player.ui.CoverPlayerView
 import java.lang.ref.WeakReference
 
@@ -16,6 +19,9 @@ internal class EnhancedPlayerActivity : Activity() {
     private var session: PlayerActivitySession? = null
     private var player: CoverPlayerView? = null
     private var layout: PlayerWindowLayout? = null
+    private var pageTransition: PlayerPageTransition? = null
+    private var closing = false
+    private var started = false
     private var registeredBack = false
     private val back = object : OnBackAnimationCallback {
         // Owning the predictive phase keeps this opaque Activity in place instead of allowing
@@ -30,6 +36,11 @@ internal class EnhancedPlayerActivity : Activity() {
         setTheme(android.R.style.Theme_Material_NoActionBar)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         super.onCreate(savedInstanceState)
+        // Module animation resources cannot be resolved by the borrowed host package's window.
+        // Move our own content instead, on an opaque backdrop that protects the native page.
+        window.setBackgroundDrawable(Color.BLACK.toDrawable())
+        overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
+        overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
         val current = PlayerActivitySessions.find(intent?.getStringExtra(PlayerActivitySessions.EXTRA_SESSION))
         if (current == null) { finish(); return }
         session = current
@@ -49,9 +60,17 @@ internal class EnhancedPlayerActivity : Activity() {
         ).also {
             it.tag = PLAYER_OVERLAY_TAG
             setContentView(it)
+            pageTransition = PlayerPageTransition(it).also { transition ->
+                if (savedInstanceState == null) transition.enter()
+            }
         }
         onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_OVERLAY, back)
         registeredBack = true
+    }
+
+    override fun onStart() {
+        super.onStart()
+        started = true
     }
 
     override fun onResume() {
@@ -73,14 +92,32 @@ internal class EnhancedPlayerActivity : Activity() {
     }
 
     private fun dismissPlayer() {
-        if (isFinishing) return
+        if (closing || isFinishing) return
         // Close/collapse the native data page first, so returning never exposes its player.
         if (!runCatching { session?.dismiss() ?: true }.getOrDefault(false)) return
-        player?.prepareForDismissal()
         finish()
     }
 
+    override fun finish() {
+        if (closing || isFinishing) return
+        closing = true
+        player?.prepareForDismissal()
+        val transition = pageTransition
+        if (transition == null || !started) super.finish() else transition.exit { super.finish() }
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean =
+        closing || super.dispatchTouchEvent(event)
+
+    override fun onStop() {
+        started = false
+        pageTransition?.completeExit()
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        pageTransition?.release()
+        pageTransition = null
         if (registeredBack) onBackInvokedDispatcher.unregisterOnBackInvokedCallback(back)
         // Detaching the view removes listeners and releases all session providers.
         player?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }

@@ -1,6 +1,7 @@
 package com.jaco.musicenhance.hook
 
 import android.app.Activity
+import android.app.ActivityOptions
 import android.content.Intent
 import android.graphics.Color
 import android.os.Handler
@@ -123,7 +124,8 @@ internal object PlayerActivityRouter {
         }
         try {
             source.startActivity(Intent(PlayerActivitySessions.ACTION).setComponent(component)
-                .putExtra(PlayerActivitySessions.EXTRA_SESSION, token))
+                .putExtra(PlayerActivitySessions.EXTRA_SESSION, token),
+                ActivityOptions.makeCustomAnimation(source, 0, 0).toBundle())
             moduleInfo("Enhanced Activity requested; app=${profile.packageName}, slot=${component.className}")
             // A failed launch must not leave a permanent black native page or retain its session.
             main.postDelayed({
