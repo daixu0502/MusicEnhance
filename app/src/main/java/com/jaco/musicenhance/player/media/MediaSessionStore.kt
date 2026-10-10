@@ -160,8 +160,6 @@ internal object MediaSessionStore {
             positionMs = position,
             isPlaying = playback?.state == PlaybackState.STATE_PLAYING ||
                 playback?.state == PlaybackState.STATE_BUFFERING,
-            actions = playback?.actions ?: 0,
-            customActions = playback?.customActions?.map { it.action }.orEmpty(),
             controls = runCatching { controlReader?.read(metadata, playback) }.getOrNull() ?: PlayerControlState(),
         ).also {
             lastSnapshot = it

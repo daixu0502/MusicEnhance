@@ -10,6 +10,5 @@ internal interface MusicPlayerAdapter {
     fun installHooks(loader: ClassLoader) {}
     fun onApplicationCreated(application: Application) {}
     fun onActivityReady(activity: Activity) {}
-    fun onPlayerUnavailable(activity: Activity) {}
     fun createSession(activity: Activity): PlayerSession
 }

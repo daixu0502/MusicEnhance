@@ -58,7 +58,6 @@ internal class EnhancedPlayerActivity : Activity() {
             this, window, controller, onDismiss = ::dismissPlayer,
             keepScreenOnRequested = { current.canShow(this) && current.keepScreenOn() },
         ).also {
-            it.tag = PLAYER_OVERLAY_TAG
             setContentView(it)
             pageTransition = PlayerPageTransition(it) {
                 val geometry = it.display?.displayId?.let(CoverDisplayGeometry::read)

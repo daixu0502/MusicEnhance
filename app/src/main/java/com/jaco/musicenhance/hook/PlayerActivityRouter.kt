@@ -92,10 +92,7 @@ internal object PlayerActivityRouter {
             CoverHomeAppearance.update(source)
             return
         }
-        if (!hookEnabled(profile) || !CoverScreenDetector.isCoverScreen(source)) {
-            MusicAppAdapters.onCoverPlayerUnavailable(source)
-            return
-        }
+        if (!hookEnabled(profile) || !CoverScreenDetector.isCoverScreen(source)) return
         if (profile.isHorizontalPlayerActivity(source.javaClass.name)) { source.finish(); return }
         // Restored Activities and an inner-screen player folded onto the cover already exist.
         // Collapse them before making the enhanced window transparent; never use them for data.

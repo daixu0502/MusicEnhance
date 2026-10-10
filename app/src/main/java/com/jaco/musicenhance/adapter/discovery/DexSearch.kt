@@ -1,10 +1,8 @@
 package com.jaco.musicenhance.adapter.discovery
 
 import org.luckypray.dexkit.DexKitBridge
-import org.luckypray.dexkit.query.FindClass
 import org.luckypray.dexkit.query.FindField
 import org.luckypray.dexkit.query.FindMethod
-import org.luckypray.dexkit.result.ClassData
 import org.luckypray.dexkit.result.FieldData
 import org.luckypray.dexkit.result.MethodData
 import java.io.Closeable
@@ -19,12 +17,6 @@ internal class DexSearch internal constructor(
             require(request.matcher != null && !request.findFirst) { "Discovery must match all candidates" }
         })
     }.distinctBy { it.descriptor }.bounded()
-
-    fun classes(query: FindClass.() -> Unit): List<ClassData> = bridges.flatMap {
-        it.findClass(FindClass().apply(query).also { request ->
-            require(request.matcher != null && !request.findFirst) { "Discovery must match all candidates" }
-        })
-    }.distinctBy { it.name }.bounded()
 
     fun fields(query: FindField.() -> Unit): List<FieldData> = bridges.flatMap {
         it.findField(FindField().apply(query).also { request ->

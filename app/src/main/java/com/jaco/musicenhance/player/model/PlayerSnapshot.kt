@@ -10,8 +10,6 @@ internal data class PlayerSnapshot(
     val durationMs: Long,
     val positionMs: Long,
     val isPlaying: Boolean,
-    val actions: Long,
-    val customActions: List<String>,
     val controls: PlayerControlState = PlayerControlState(),
 ) {
     /** Metadata cache key, not a native song ID. Adapters must still verify native identity. */
@@ -26,8 +24,6 @@ internal data class PlayerSnapshot(
             durationMs = 0,
             positionMs = 0,
             isPlaying = false,
-            actions = 0,
-            customActions = emptyList(),
         )
     }
 }

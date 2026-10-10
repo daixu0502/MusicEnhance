@@ -36,7 +36,7 @@ internal class LxxPlaybackSource : PlayerDataSource by MediaSessionDataSource {
             title, artist, album, artwork = null, durationMs = durationMs,
             positionMs = if (matched) (api.position.invoke(player) as Number).toLong().coerceIn(0, durationMs) else 0L,
             isPlaying = matched && (api.state.invoke(player) as Number).toInt() in PLAYING_STATES,
-            actions = 0, customActions = emptyList(), controls = PlayerControlState(songTitle = title),
+            controls = PlayerControlState(songTitle = title),
         )
     }
 

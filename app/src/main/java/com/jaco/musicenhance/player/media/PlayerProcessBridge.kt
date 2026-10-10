@@ -32,8 +32,6 @@ internal object PlayerProcessBridge {
     private const val EXTRA_ARTWORK = "artwork"
     private const val EXTRA_DURATION = "duration"
     private const val EXTRA_PLAYING = "playing"
-    private const val EXTRA_ACTIONS = "actions"
-    private const val EXTRA_CUSTOM_ACTIONS = "custom_actions"
     private const val EXTRA_REPEAT_MODE = "repeat_mode"
     private const val EXTRA_FAVORITE = "favorite"
     private const val EXTRA_CONTROL_TITLE = "control_title"
@@ -120,8 +118,6 @@ internal object PlayerProcessBridge {
             putExtra(EXTRA_DURATION, snapshot.durationMs)
             putExtra(EXTRA_POSITION, snapshot.positionMs)
             putExtra(EXTRA_PLAYING, snapshot.isPlaying)
-            putExtra(EXTRA_ACTIONS, snapshot.actions)
-            putStringArrayListExtra(EXTRA_CUSTOM_ACTIONS, ArrayList(snapshot.customActions))
             putExtra(EXTRA_REPEAT_MODE, snapshot.controls.repeatMode.name)
             snapshot.controls.favorite?.let { putExtra(EXTRA_FAVORITE, it) }
             putExtra(EXTRA_CONTROL_TITLE, snapshot.controls.songTitle)
@@ -180,8 +176,6 @@ internal object PlayerProcessBridge {
                 durationMs = intent.getLongExtra(EXTRA_DURATION, 0L),
                 positionMs = intent.getLongExtra(EXTRA_POSITION, 0L),
                 isPlaying = intent.getBooleanExtra(EXTRA_PLAYING, false),
-                actions = intent.getLongExtra(EXTRA_ACTIONS, 0L),
-                customActions = intent.getStringArrayListExtra(EXTRA_CUSTOM_ACTIONS).orEmpty(),
                 controls = PlayerControlState(
                     repeatMode = RepeatMode.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_REPEAT_MODE) } ?: RepeatMode.UNKNOWN,
                     favorite = if (intent.hasExtra(EXTRA_FAVORITE)) intent.getBooleanExtra(EXTRA_FAVORITE, false) else null,

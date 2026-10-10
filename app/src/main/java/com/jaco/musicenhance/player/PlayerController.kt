@@ -25,5 +25,3 @@ internal interface PlayerController {
     /** Read the latest cached audio sample at the display's frame rate; no IPC or analysis here. */
     fun bassLevel(): Float
 }
-
-internal const val PLAYER_OVERLAY_TAG = "musicenhance_cover_player"

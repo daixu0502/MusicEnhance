@@ -19,7 +19,6 @@ internal object MusicAppAdapters {
     fun installNativeHooks(profile: MusicAppProfile, classLoader: ClassLoader) = find(profile.packageName)?.installHooks(classLoader)
     fun onApplicationCreated(application: Application) = find(application.packageName)?.onApplicationCreated(application)
     fun onActivityReady(activity: Activity) = find(activity.packageName)?.onActivityReady(activity)
-    fun onCoverPlayerUnavailable(activity: Activity) = find(activity.packageName)?.onPlayerUnavailable(activity)
     fun create(profile: MusicAppProfile, activity: Activity) =
         EnhancedPlayerController(requireNotNull(find(profile.packageName)).createSession(activity))
 }
