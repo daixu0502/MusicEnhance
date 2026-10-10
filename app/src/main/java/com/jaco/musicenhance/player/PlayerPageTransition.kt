@@ -1,88 +1,109 @@
 package com.jaco.musicenhance.player
 
-import android.animation.Animator
-import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.view.View
+import android.view.ViewTreeObserver
 import android.view.animation.PathInterpolator
-import androidx.core.view.OneShotPreDrawListener
-import androidx.core.view.doOnPreDraw
+import com.jaco.musicenhance.hook.moduleInfo
 
-/** Animate in window coordinates, so “bottom” follows both supported screen orientations. */
-internal class PlayerPageTransition(private val content: View) {
-    private var pendingEnter: OneShotPreDrawListener? = null
-    private var animator: ValueAnimator? = null
-    private var offsetFraction = 0f
+/** Callback-free property animations use RenderThread, not the host's busy main-thread frame loop. */
+internal class PlayerPageTransition(
+    private val content: View,
+    private val canAnimate: () -> Boolean = { true },
+) {
+    private val handler = Handler(Looper.getMainLooper())
+    private var observer: ViewTreeObserver? = null
+    private var readyDeadlineMs = 0L
+    private var lastWidth = 0
+    private var lastHeight = 0
     private var onExitFinished: (() -> Unit)? = null
-
-    fun enter() {
-        pendingEnter = content.doOnPreDraw {
-            pendingEnter = null
-            if (ValueAnimator.areAnimatorsEnabled()) {
-                offsetFraction = 1f
+    private val completion = Runnable {
+        val callback = onExitFinished
+        onExitFinished = null
+        callback?.invoke()
+    }
+    private val beforeDraw = ViewTreeObserver.OnPreDrawListener {
+        val stable = content.width == lastWidth && content.height == lastHeight && content.height > 0
+        lastWidth = content.width
+        lastHeight = content.height
+        when {
+            stable && canAnimate() -> {
+                cancelBeforeDraw()
                 content.translationY = content.height.toFloat()
+                content.alpha = 1f
+                moduleInfo("Player slide enter: size=${content.width}x${content.height}, scale=${ValueAnimator.getDurationScale()}")
                 animateTo(0f, ENTER_DURATION_MS)
             }
+            SystemClock.uptimeMillis() >= readyDeadlineMs -> {
+                moduleInfo("Player slide skipped: layout/background not ready; size=${content.width}x${content.height}")
+                completeExit()
+            }
+            else -> content.postInvalidateOnAnimation()
         }
+        true
+    }
+
+    fun enter() {
+        cancelAnimation()
+        if (!ValueAnimator.areAnimatorsEnabled()) return
+        content.alpha = 0f
+        readyDeadlineMs = SystemClock.uptimeMillis() + LAYOUT_WAIT_MS
+        observer = content.viewTreeObserver.also { it.addOnPreDrawListener(beforeDraw) }
+        content.postInvalidateOnAnimation()
     }
 
     fun exit(onFinished: () -> Unit) {
         cancelAnimation()
         onExitFinished = onFinished
-        if (!content.isLaidOut || !content.isAttachedToWindow || !ValueAnimator.areAnimatorsEnabled()) {
+        if (content.alpha == 0f || !content.isLaidOut || !content.isAttachedToWindow ||
+            !canAnimate() || !ValueAnimator.areAnimatorsEnabled()) {
             completeExit()
             return
         }
-        animateTo(1f, EXIT_DURATION_MS)
+        animateTo(content.height.toFloat(), EXIT_DURATION_MS)
+        moduleInfo("Player slide exit: size=${content.width}x${content.height}, scale=${ValueAnimator.getDurationScale()}")
+        // Animator listeners, update callbacks, withLayer and withEndAction all prevent the
+        // RenderThread implementation. Only Activity completion is scheduled on main.
+        handler.postDelayed(completion, (EXIT_DURATION_MS * ValueAnimator.getDurationScale()).toLong() + FRAME_MARGIN_MS)
     }
 
-    /** A stopped/destroyed window must never wait for another animation frame to finish. */
     fun completeExit() {
         cancelAnimation()
-        val completion = onExitFinished
-        onExitFinished = null
-        if (completion == null) {
-            offsetFraction = 0f
-            content.translationY = 0f
-        }
-        completion?.invoke()
+        content.alpha = 1f
+        content.translationY = 0f
+        completion.run()
     }
 
     fun release() {
-        cancelAnimation()
         onExitFinished = null
-        content.translationY = 0f
+        completeExit()
     }
 
-    private fun animateTo(target: Float, durationMs: Long) {
-        animator = ValueAnimator.ofFloat(offsetFraction, target).apply {
-            duration = durationMs
-            interpolator = PathInterpolator(0.22f, 0.0f, 0.18f, 1.0f)
-            addUpdateListener {
-                offsetFraction = it.animatedValue as Float
-                // Read the latest size if fullscreen bounds or orientation change mid-animation.
-                content.translationY = content.height * offsetFraction
-            }
-            addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    animator = null
-                    if (target == 1f) completeExit()
-                }
-            })
-            start()
-        }
+    private fun animateTo(targetY: Float, durationMs: Long) {
+        content.animate().translationY(targetY).setDuration(durationMs).setStartDelay(0)
+            .setInterpolator(PathInterpolator(0.22f, 0f, 0.18f, 1f)).start()
     }
 
     private fun cancelAnimation() {
-        pendingEnter?.removeListener()
-        pendingEnter = null
-        animator?.removeAllListeners()
-        animator?.cancel()
-        animator = null
+        cancelBeforeDraw()
+        handler.removeCallbacks(completion)
+        content.animate().cancel()
+    }
+
+    private fun cancelBeforeDraw() {
+        val registered = observer ?: return
+        observer = null
+        val current = if (registered.isAlive) registered else content.viewTreeObserver
+        if (current.isAlive) current.removeOnPreDrawListener(beforeDraw)
     }
 
     private companion object {
         const val ENTER_DURATION_MS = 360L
         const val EXIT_DURATION_MS = 280L
+        const val LAYOUT_WAIT_MS = 350L
+        const val FRAME_MARGIN_MS = 32L
     }
 }

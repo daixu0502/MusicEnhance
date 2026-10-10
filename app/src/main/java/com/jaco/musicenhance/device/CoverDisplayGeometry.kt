@@ -7,7 +7,15 @@ import com.jaco.musicenhance.hook.moduleInfo
 
 /** Read one DisplayInfo snapshot, without Activity resource compatibility rotation overrides. */
 internal object CoverDisplayGeometry {
-    data class State(val rotation: Int, val width: Int, val height: Int, val cutout: Rect?)
+    data class State(val rotation: Int, val width: Int, val height: Int, val cutout: Rect?) {
+        // Some host display caches keep inner-screen/compatibility dimensions after folding.
+        // Such a snapshot cannot veto a cover window that has already laid out correctly.
+        val isCoverShape: Boolean get() = width > 0 && height > 0 &&
+            minOf(width, height).toFloat() / maxOf(width, height) >= 0.60f
+
+        fun matchesCoverWindow(windowWidth: Int, windowHeight: Int): Boolean =
+            !isCoverShape || (windowWidth == width && windowHeight == height)
+    }
 
     // Public Activity metrics can contain compatibility rotation overrides; use one physical snapshot.
     // A missing platform API leaves this reader unavailable and the caller uses its layout fallback.

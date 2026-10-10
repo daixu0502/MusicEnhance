@@ -37,8 +37,7 @@ internal class SpotifyLyricsProvider(private val loader: ClassLoader) : LyricsPr
             cached = cache[uri] ?: LyricsSnapshot(uri.ifEmpty { metadataKey }, LyricsStatus.LOADING)
         }
         if (cached.status == LyricsStatus.READY || task != null || SystemClock.elapsedRealtime() < retryAtMs) return cached
-        val service = SpotifyPlayerHooks.lyricsService.get()
-        if (service == null || song == null) {
+        if (!SpotifyPlayerHooks.hasLyricsService() || song == null) {
             retryAtMs = SystemClock.elapsedRealtime() + 1_000L
             return LyricsSnapshot(uri.ifEmpty { metadataKey }, LyricsStatus.UNAVAILABLE)
         }
@@ -47,7 +46,9 @@ internal class SpotifyLyricsProvider(private val loader: ClassLoader) : LyricsPr
         val requestUri = song.uri
         // Submission holds this lock, so even an immediate result cannot race assignment of task.
         task = worker.submit {
-            val result = runCatching { load(service, requestUri) }
+            val result = runCatching {
+                load(requireNotNull(SpotifyPlayerHooks.resolveLyricsService()) { "Spotify lyrics provider unavailable" }, requestUri)
+            }
             synchronized(this) {
                 if (request == generation) {
                     task = null

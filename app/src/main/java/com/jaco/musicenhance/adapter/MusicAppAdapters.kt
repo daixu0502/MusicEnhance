@@ -2,7 +2,6 @@ package com.jaco.musicenhance.adapter
 
 import android.app.Activity
 import android.app.Application
-import android.view.ViewGroup
 import com.jaco.musicenhance.adapter.apple.ApplePlayerAdapter
 import com.jaco.musicenhance.adapter.kugoulite.KugouLitePlayerAdapter
 import com.jaco.musicenhance.adapter.kugou.KugouPlayerAdapter
@@ -21,6 +20,6 @@ internal object MusicAppAdapters {
     fun onApplicationCreated(application: Application) = find(application.packageName)?.onApplicationCreated(application)
     fun onActivityReady(activity: Activity) = find(activity.packageName)?.onActivityReady(activity)
     fun onCoverPlayerUnavailable(activity: Activity) = find(activity.packageName)?.onPlayerUnavailable(activity)
-    fun create(profile: MusicAppProfile, activity: Activity, root: ViewGroup) =
-        EnhancedPlayerController(requireNotNull(find(profile.packageName)).createSession(activity, root))
+    fun create(profile: MusicAppProfile, activity: Activity) =
+        EnhancedPlayerController(requireNotNull(find(profile.packageName)).createSession(activity))
 }

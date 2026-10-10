@@ -189,7 +189,9 @@ internal object MusicAppHooks {
                 ) { chain ->
                     val activity = chain.thisObject as? Activity
                     val intent = chain.args.firstOrNull() as? Intent
-                    if (shouldBlockHorizontalLaunch(activity, intent)) null else chain.proceed()
+                    if (shouldBlockHorizontalLaunch(activity, intent) ||
+                        runCatching { PlayerActivityRouter.onLaunchRequested(activity, intent) }
+                            .onFailure { moduleInfo("Direct player routing unavailable: $it") }.getOrDefault(false)) null else chain.proceed()
                 }
             }
         }
@@ -210,7 +212,9 @@ internal object MusicAppHooks {
                 ) { chain ->
                     val activity = chain.args.filterIsInstance<Activity>().firstOrNull()
                     val intent = chain.args.filterIsInstance<Intent>().firstOrNull()
-                    if (shouldBlockHorizontalLaunch(activity, intent)) null else chain.proceed()
+                    if (shouldBlockHorizontalLaunch(activity, intent) ||
+                        runCatching { PlayerActivityRouter.onLaunchRequested(activity, intent) }
+                            .onFailure { moduleInfo("Direct player routing unavailable: $it") }.getOrDefault(false)) null else chain.proceed()
                 }
             }
         }

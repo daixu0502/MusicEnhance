@@ -1,7 +1,6 @@
 package com.jaco.musicenhance.adapter.apple
 
 import android.app.Activity
-import android.view.ViewGroup
 import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.hook.safeHook
 import com.jaco.musicenhance.hook.moduleInfo
@@ -81,8 +80,7 @@ internal object ApplePlayerHooks {
         val pageId = System.identityHashCode(identity)
         activities[activity] = true
         val owner = WeakReference(activity)
-        val root = type.getMethod("m1").invoke(activity) as? ViewGroup ?: return false
-        val accepted = PlayerActivityRouter.onNativePageShown(activity, NativePlayerPage(pageId, WeakReference(root), onLaunchFailed = {
+        val accepted = PlayerActivityRouter.onNativePageShown(activity, NativePlayerPage(pageId, onLaunchFailed = {
             owner.get()?.takeUnless { it.isDestroyed || it.isFinishing }?.let {
                 if (type.getMethod("o1").invoke(it) != true) type.getMethod("j1", BooleanArray::class.java).invoke(it, booleanArrayOf(true))
             }
@@ -94,7 +92,7 @@ internal object ApplePlayerHooks {
             }
             true
         })
-        // Swipe/resume fallback may have already expanded the sheet. Collapse it behind the shield,
+        // Swipe/resume fallback may have already expanded the sheet. Collapse it before making the enhanced window translucent,
         // while our Activity opens, rather than exposing a collapsing native player on return.
         if (accepted && identity.javaClass.getField("G").getInt(identity) != 4) {
             type.getMethod("h1", BooleanArray::class.java).invoke(activity, booleanArrayOf(true))

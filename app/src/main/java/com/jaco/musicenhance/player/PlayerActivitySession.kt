@@ -3,26 +3,29 @@ package com.jaco.musicenhance.player
 import android.app.Activity
 import java.lang.ref.WeakReference
 
-/** In-process handoff. Native roots/controllers are created by the adapter, never by the Activity. */
+/** In-process handoff. Providers use the enhanced Activity; navigation recovery is independent. */
 internal class PlayerActivitySession(
     val windowTitle: String,
-    val createController: () -> PlayerController?,
+    val createController: (Activity) -> PlayerController?,
     val canShow: (Activity) -> Boolean,
     val keepScreenOn: () -> Boolean,
     val onDismiss: () -> Boolean,
-    val onClosed: () -> Unit,
+    val onNavigationReleased: () -> Unit,
     val onLaunchFailed: () -> Unit = {},
+    val prepareBackground: (() -> Boolean)? = null,
 ) {
     var activity = WeakReference<EnhancedPlayerActivity>(null)
     private var dismissed = false
     private var closed = false
+    private var navigationReleased = false
     private var launchFailed = false
 
     fun failLaunch() {
-        if (closed || launchFailed) return
+        if (closed || navigationReleased || launchFailed) return
         launchFailed = true
         // The fallback owns the native page now; failed Activity destruction must not collapse it.
         dismissed = true
+        releaseNavigation()
         onLaunchFailed()
     }
 
@@ -36,7 +39,14 @@ internal class PlayerActivitySession(
         if (closed) return
         closed = true
         activity.clear()
-        onClosed()
+        releaseNavigation()
+    }
+
+    /** A finishing transparent Activity can outlive the home becoming interactive. */
+    fun releaseNavigation() {
+        if (navigationReleased) return
+        navigationReleased = true
+        onNavigationReleased()
     }
 }
 

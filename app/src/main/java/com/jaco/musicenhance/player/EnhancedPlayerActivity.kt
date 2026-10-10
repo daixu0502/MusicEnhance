@@ -12,6 +12,7 @@ import android.window.OnBackAnimationCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.core.graphics.drawable.toDrawable
 import com.jaco.musicenhance.player.ui.CoverPlayerView
+import com.jaco.musicenhance.device.CoverDisplayGeometry
 import java.lang.ref.WeakReference
 
 /** Instantiated in the music app's process through its registered Activity slot. No host UI code runs here. */
@@ -22,11 +23,11 @@ internal class EnhancedPlayerActivity : Activity() {
     private var pageTransition: PlayerPageTransition? = null
     private var closing = false
     private var started = false
+    private var backgroundReady = false
     private var registeredBack = false
     private val back = object : OnBackAnimationCallback {
-        // Owning the predictive phase keeps this opaque Activity in place instead of allowing
-        // the system gesture animation to reveal the native player underneath. The common close
-        // path still runs only after the gesture is committed; cancellation needs no rollback.
+        // Keep the slide under our control until the gesture commits; cancellation leaves
+        // both the enhanced page and the home underneath unchanged.
         override fun onBackInvoked() = dismissPlayer()
     }
 
@@ -36,8 +37,7 @@ internal class EnhancedPlayerActivity : Activity() {
         setTheme(android.R.style.Theme_Material_NoActionBar)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
         super.onCreate(savedInstanceState)
-        // Module animation resources cannot be resolved by the borrowed host package's window.
-        // Move our own content instead, on an opaque backdrop that protects the native page.
+        // Stay opaque until an already-restored native page has been collapsed successfully.
         window.setBackgroundDrawable(Color.BLACK.toDrawable())
         overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, 0, 0)
         overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
@@ -46,7 +46,7 @@ internal class EnhancedPlayerActivity : Activity() {
         session = current
         if (!current.canShow(this)) { current.failLaunch(); finish(); return }
         current.activity = WeakReference(this)
-        val controller = runCatching(current.createController).onFailure {
+        val controller = runCatching { current.createController(this) }.onFailure {
             com.jaco.musicenhance.hook.moduleInfo("Enhanced player session unavailable: $it")
         }.getOrNull()
         if (controller == null) { current.failLaunch(); finish(); return }
@@ -60,7 +60,10 @@ internal class EnhancedPlayerActivity : Activity() {
         ).also {
             it.tag = PLAYER_OVERLAY_TAG
             setContentView(it)
-            pageTransition = PlayerPageTransition(it).also { transition ->
+            pageTransition = PlayerPageTransition(it) {
+                val geometry = it.display?.displayId?.let(CoverDisplayGeometry::read)
+                backgroundReady && (geometry == null || geometry.matchesCoverWindow(it.width, it.height))
+            }.also { transition ->
                 if (savedInstanceState == null) transition.enter()
             }
         }
@@ -76,6 +79,18 @@ internal class EnhancedPlayerActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (session?.canShow(this) != true) dismissPlayer()
+        else if (!backgroundReady && session?.prepareBackground != null) {
+            if (runCatching { session?.prepareBackground?.invoke() == true }.getOrDefault(false)) {
+                // Public since API 30. Changes server-side occlusion too, unlike just clearing a drawable.
+                runCatching { setTranslucent(true) }.onSuccess {
+                    backgroundReady = true // A previously translucent borrowed slot needs no conversion.
+                    window.setBackgroundDrawable(Color.TRANSPARENT.toDrawable())
+                }.onFailure {
+                    com.jaco.musicenhance.hook.moduleInfo("Transparent player background unavailable: $it")
+                    pageTransition?.completeExit()
+                }
+            } else pageTransition?.completeExit()
+        }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -93,17 +108,25 @@ internal class EnhancedPlayerActivity : Activity() {
 
     private fun dismissPlayer() {
         if (closing || isFinishing) return
-        // Close/collapse the native data page first, so returning never exposes its player.
+        // Recovery paths may still have a restored native page to collapse before returning.
         if (!runCatching { session?.dismiss() ?: true }.getOrDefault(false)) return
         finish()
     }
 
     override fun finish() {
         if (closing || isFinishing) return
+        if (!runCatching { session?.dismiss() ?: true }.getOrDefault(false)) return
         closing = true
         player?.prepareForDismissal()
         val transition = pageTransition
-        if (transition == null || !started) super.finish() else transition.exit { super.finish() }
+        if (transition == null || !started) completeFinish() else transition.exit(::completeFinish)
+    }
+
+    private fun completeFinish() {
+        super.finish()
+        // Release launch deduplication before the host accepts another tap. The session and
+        // its providers still follow Activity destruction; recreation never enters this path.
+        if (isFinishing) session?.releaseNavigation()
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean =

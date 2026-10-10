@@ -341,9 +341,7 @@ internal class CoverPlayerView(
     private fun layoutForDisplay(width: Int = this.width, height: Int = this.height) {
         if (width <= 0 || height <= 0) return
         val portrait = height > width * 1.03f
-        val physical = CoverDisplayGeometry.read(display?.displayId ?: 0)?.takeIf {
-            min(it.width, it.height).toFloat() / max(it.width, it.height).coerceAtLeast(1) >= 0.60f
-        }
+        val physical = CoverDisplayGeometry.read(display?.displayId ?: 0)?.takeIf { it.isCoverShape }
         val localRotation = display?.rotation ?: Surface.ROTATION_0
         val rotation = physical?.rotation ?: localRotation
         fun Rect.cameraBounds(frameWidth: Int, frameHeight: Int) = CoverCameraPlacement.Cutout(

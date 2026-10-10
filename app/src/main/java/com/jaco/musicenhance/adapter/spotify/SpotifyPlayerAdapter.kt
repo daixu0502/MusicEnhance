@@ -1,7 +1,6 @@
 package com.jaco.musicenhance.adapter.spotify
 
 import android.app.Activity
-import android.view.ViewGroup
 import com.jaco.musicenhance.adapter.MusicPlayerAdapter
 import com.jaco.musicenhance.player.PlayerDataSource
 import com.jaco.musicenhance.player.PlayerSession
@@ -15,7 +14,7 @@ internal object SpotifyPlayerAdapter : MusicPlayerAdapter {
     override fun installHooks(loader: ClassLoader) = SpotifyPlayerHooks.install(loader)
     override fun onActivityReady(activity: Activity) = SpotifyPlayerHooks.observe(activity)
 
-    override fun createSession(activity: Activity, nativeRoot: ViewGroup): PlayerSession {
+    override fun createSession(activity: Activity): PlayerSession {
         val media = MediaSessionDataSource
         val controls = SpotifyControlSource()
         val data = object : PlayerDataSource by media {

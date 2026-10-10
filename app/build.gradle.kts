@@ -106,6 +106,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
+    testImplementation(libs.libxposed.api)
     debugImplementation(libs.androidx.compose.ui.tooling)
     compileOnly(libs.libxposed.api)
     implementation(libs.libxposed.service)

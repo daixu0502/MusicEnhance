@@ -5,7 +5,6 @@ import android.app.Activity
 import android.media.session.MediaSession
 import android.os.Bundle
 import android.os.Handler
-import android.view.ViewGroup
 import com.jaco.musicenhance.adapter.NativePlayerPage
 import com.jaco.musicenhance.hook.PlayerActivityRouter
 import com.jaco.musicenhance.hook.module
@@ -16,11 +15,29 @@ import java.lang.ref.WeakReference
 internal object SpotifyPlayerHooks {
     @Volatile var mediaSession = WeakReference<MediaSession>(null)
     @Volatile var lyricsService = WeakReference<Any>(null)
+    @Volatile private var lyricsProvider = WeakReference<Any>(null)
+    fun hasLyricsService() = lyricsService.get() != null || lyricsProvider.get() != null
+    /** Called on the lyrics worker: resolve the host-selected v2/v3 service without a player page. */
+    fun resolveLyricsService(): Any? = lyricsService.get() ?: lyricsProvider.get()?.let { provider ->
+        provider.javaClass.getMethod("get").invoke(provider)?.also { lyricsService = WeakReference(it) }
+    }
     data class FavoriteAction(val uri: String, val favorite: Boolean, val intent: PendingIntent)
     @Volatile var addFavorite: FavoriteAction? = null
     @Volatile var removeFavorite: FavoriteAction? = null
 
     fun install(loader: ClassLoader) {
+        safeHook("Spotify application lyrics provider") {
+            // 9.1.90.2270 xzo case 1177 delegates to vbd0.q, retaining the host feature flags.
+            // The application graph creates the provider even if NowPlayingActivity never opens.
+            val factory = loader.loadClass("p.xzo")
+            factory.getMethod("get")
+            val constructor = factory.getConstructor(loader.loadClass("p.yzo"), Int::class.javaPrimitiveType)
+            module.installHook(constructor, "musicenhance.spotify.lyrics.provider") { chain ->
+                chain.proceed().also {
+                    if (chain.args[1] == 1177) lyricsProvider = WeakReference(chain.thisObject)
+                }
+            }
+        }
         safeHook("Spotify native player lifecycle") {
             val type = loader.loadClass("com.spotify.nowplaying.musicinstallation.NowPlayingActivity")
             module.installHook(type.getDeclaredMethod("onCreate", Bundle::class.java), "musicenhance.spotify.page") { chain ->
@@ -84,10 +101,9 @@ internal object SpotifyPlayerHooks {
 
     fun observe(activity: Activity) {
         if (!SpotifyPlayerProfile.isPlayerActivity(activity.javaClass.name)) return
-        val root = activity.window.decorView as? ViewGroup ?: return
         val owner = WeakReference(activity)
         PlayerActivityRouter.onNativePageShown(activity, NativePlayerPage(
-            System.identityHashCode(activity), WeakReference(root),
+            System.identityHashCode(activity),
             dismiss = {
                 val native = owner.get()
                 if (native == null || native.isDestroyed || native.isFinishing) true else {

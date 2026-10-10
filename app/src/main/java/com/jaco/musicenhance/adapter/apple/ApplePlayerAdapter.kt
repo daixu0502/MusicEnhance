@@ -2,7 +2,6 @@ package com.jaco.musicenhance.adapter.apple
 
 import android.app.Activity
 import android.app.Application
-import android.view.ViewGroup
 import com.jaco.musicenhance.adapter.MusicPlayerAdapter
 import com.jaco.musicenhance.player.PlayerDataSource
 import com.jaco.musicenhance.player.PlayerSession
@@ -23,7 +22,7 @@ internal object ApplePlayerAdapter : MusicPlayerAdapter {
         MediaSessionStore.controlReader = AppleMediaControlSource(application.resources)
     }
     override fun onActivityReady(activity: Activity) = ApplePlayerHooks.observe(activity)
-    override fun createSession(activity: Activity, nativeRoot: ViewGroup): PlayerSession {
+    override fun createSession(activity: Activity): PlayerSession {
         val playback = ApplePlaybackSource(activity.classLoader)
         val controls = AppleControlSource(playback)
         val media = MediaSessionDataSource
