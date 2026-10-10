@@ -16,7 +16,6 @@ internal object ApplePlayerAdapter : MusicPlayerAdapter {
     override fun installHooks(loader: ClassLoader) {
         ApplePlayerHooks.install(loader)
         AppleLyricsProvider.install(loader)
-        AppleFavoriteOperationHooks.install(loader)
     }
     override fun onApplicationCreated(application: Application) {
         MediaSessionStore.controlReader = AppleMediaControlSource(application.resources)

@@ -28,6 +28,9 @@ internal enum class SaltApi(
         "fi2", "\u052c", "\u052d", "ue3", "sc1", "id1", "\u0cb6", "\u093d", "\u0782", "cr4");
 
     companion object {
+        /** Only a hint for the version-gated resolver, never a declaration of compatibility. */
+        fun hint(loader: ClassLoader): SaltApi = runCatching { resolve(loader) }.getOrDefault(V12_4_1)
+
         fun resolve(loader: ClassLoader): SaltApi {
             val controller = loader.loadClass("com.salt.music.service.MusicController")
             return entries.singleOrNull { api ->

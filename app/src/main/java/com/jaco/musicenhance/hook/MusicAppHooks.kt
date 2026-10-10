@@ -10,6 +10,7 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.util.Log
 import com.jaco.musicenhance.adapter.MusicAppAdapters
+import com.jaco.musicenhance.adapter.discovery.HostInterfaces
 import com.jaco.musicenhance.adapter.isHorizontalPlayerActivityName
 import com.jaco.musicenhance.device.CoverScreenDetector
 import com.jaco.musicenhance.player.audio.SpectrumEngine
@@ -30,6 +31,7 @@ internal object MusicAppHooks {
                 after { chain ->
                     PlayerActivityLaunchHook.install(chain.thisObject as? Instrumentation)
                     (chain.args.firstOrNull() as? Application)?.let { application ->
+                        HostInterfaces.attach(application)
                         MusicAppAdapters.onApplicationCreated(application)
                         PlayerProcessBridge.initialize(application)
                     }

@@ -3,19 +3,30 @@ package com.jaco.musicenhance.adapter.apple
 import android.os.SystemClock
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.player.model.PlayerSnapshot
+import com.jaco.musicenhance.adapter.discovery.HostInterfaces
+import java.util.concurrent.Executor
 
 /** Apple Music 6.5.2. Read the process browser on its UI thread, not a stopped player Fragment. */
-internal class ApplePlaybackSource(private val loader: ClassLoader) {
-    private val browserField by lazy { loader.loadClass("c9.a").getField("f") }
-    private val controllerType by lazy { loader.loadClass("E3.F") }
-    private val metadataMethod by lazy { controllerType.getMethod("m0") }
-    private val itemMethod by lazy {
-        loader.loadClass("com.apple.android.music.player.O").getMethod("b", loader.loadClass("v3.v"))
-    }
-    private val favoriteSource = lazy { AppleFavoriteSource(loader) }
+internal class ApplePlaybackSource(
+    private val loader: ClassLoader,
+    private val favoriteExecutor: Executor = AppleFavoriteSource.worker,
+) {
+    private val api by lazy { AppleApi(loader) }
+    private val controllerType get() = api.controllerType
+    private val metadataMethod get() = api.metadata
+    private val itemMethod get() = api.convertItem
+    private val favoriteSource = lazy { AppleFavoriteSource(loader, favoriteExecutor) }
     private val favorites by favoriteSource
-    private val timelineType by lazy { loader.loadClass("v3.J") }
-    private val windowType by lazy { loader.loadClass("v3.J\$d") }
+    private val timelineType by lazy { controllerType.getMethod("getCurrentTimeline").returnType }
+    private val windowMethod by lazy {
+        HostInterfaces.method(loader, "apple.queue.window.v1", known = {
+            timelineType.getMethod("h", Int::class.javaPrimitiveType, loader.loadClass("v3.J\$d"))
+        }, validate = { it.parameterCount == 2 && it.parameterTypes[0] == Int::class.javaPrimitiveType && it.returnType == it.parameterTypes[1] }) {
+            methods { matcher { declaredClass = timelineType.name; name = "getWindow"; paramCount = 2 } }
+                .map { it.getMethodInstance(loader) }
+        }
+    }
+    private val windowType get() = windowMethod.parameterTypes[1]
     private var lastMetadata: Any? = null
     private var lastItem: Any? = null
     private var nextQueueReadAtMs = 0L
@@ -23,7 +34,7 @@ internal class ApplePlaybackSource(private val loader: ClassLoader) {
     @Volatile var artwork: AppleArtworkSource.Playlist? = null
         private set
 
-    fun browser(): Any? = browserField.get(null)
+    fun browser(): Any? = api.browser.get(null)
 
     fun item(player: PlayerSnapshot): Any? {
         val browser = browser() ?: return null.also { artwork = null }
@@ -44,7 +55,7 @@ internal class ApplePlaybackSource(private val loader: ClassLoader) {
 
     fun canSetRepeat(): Boolean = browser()?.let {
         // Media3 COMMAND_SET_REPEAT_MODE = 15; disconnected browsers have no available commands.
-        controllerType.getMethod("d", Int::class.javaPrimitiveType).invoke(it, 15) == true
+        api.commandAvailable.invoke(it, 15) == true
     } ?: false
 
     fun setRepeatMode(mode: Int, shuffle: Boolean = false): Boolean {
@@ -52,7 +63,7 @@ internal class ApplePlaybackSource(private val loader: ClassLoader) {
         if (!canSetRepeat()) return false
         val changeShuffle = shuffleEnabled() != shuffle
         if (changeShuffle) {
-            if (controllerType.getMethod("d", Int::class.javaPrimitiveType).invoke(browser, 14) != true) return false
+            if (api.commandAvailable.invoke(browser, 14) != true) return false
         }
         controllerType.getMethod("setRepeatMode", Int::class.javaPrimitiveType).invoke(browser, mode)
         if (changeShuffle) controllerType.getMethod("setShuffleModeEnabled", Boolean::class.javaPrimitiveType).invoke(browser, shuffle)
@@ -98,13 +109,20 @@ internal class ApplePlaybackSource(private val loader: ClassLoader) {
 
     private fun readNeighbours(browser: Any, current: AppleArtworkSource.Song): List<AppleArtworkSource.Song> {
         val timeline = controllerType.getMethod("getCurrentTimeline").invoke(browser) ?: return emptyList()
-        val index = controllerType.getMethod("e0").invoke(browser) as Int
-        val count = timelineType.getMethod("i").invoke(timeline) as Int
+        val index = api.currentIndex.invoke(browser) as Int
+        val count = queueMethod("count", "i", "getWindowCount", Int::class.javaPrimitiveType!!).invoke(timeline) as Int
         if (index !in 0 until count) return emptyList()
         val window = windowType.getConstructor().newInstance()
-        val getWindow = timelineType.getMethod("h", Int::class.javaPrimitiveType, windowType)
-        val mediaItemField = windowType.getField("c")
-        val metadataField = loader.loadClass("v3.t").getField("d")
+        val getWindow = windowMethod
+        val mediaItemField = HostInterfaces.field(loader, "apple.queue.item.v1", known = { windowType.getField("c") }) {
+            windowType.declaredFields.filter { field ->
+                field.type.declaredFields.any { it.type == metadataMethod.returnType }
+            }
+        }
+        val metadataField = HostInterfaces.field(loader, "apple.queue.metadata.v1", known = { loader.loadClass("v3.t").getField("d") },
+            validate = { it.type == metadataMethod.returnType }) {
+            mediaItemField.type.declaredFields.filter { it.type == metadataMethod.returnType }
+        }
         fun read(index: Int): AppleArtworkSource.Song? {
             getWindow.invoke(timeline, index, window)
             val nativeItem = mediaItemField.get(window) ?: return null
@@ -113,8 +131,9 @@ internal class ApplePlaybackSource(private val loader: ClassLoader) {
         if (read(index)?.identity != current.identity) return emptyList()
         val wrapMode = if (repeatMode() == 2) 2 else 0
         val shuffle = shuffleEnabled()
-        val next = timelineType.getMethod("d", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
-        val previous = timelineType.getMethod("g", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+        val params = arrayOf(Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!, Boolean::class.javaPrimitiveType!!)
+        val next = queueMethod("next", "d", "getNextWindowIndex", Int::class.javaPrimitiveType!!, *params)
+        val previous = queueMethod("previous", "g", "getPreviousWindowIndex", Int::class.javaPrimitiveType!!, *params)
         val result = ArrayList<AppleArtworkSource.Song>(6)
         val seen = hashSetOf(index)
         // The timeline knows shuffle order. Never scan or copy an entire library queue.
@@ -138,6 +157,13 @@ internal class ApplePlaybackSource(private val loader: ClassLoader) {
             text(item, "getImageUrl"),
         )
     }
+
+    private fun queueMethod(key: String, known: String, semantic: String, result: Class<*>, vararg params: Class<*>) =
+        HostInterfaces.method(loader, "apple.queue.$key.v1", known = { timelineType.getMethod(known, *params) },
+            validate = { it.returnType == result && it.parameterTypes.contentEquals(params) }) {
+            methods { matcher { declaredClass = timelineType.name; name = semantic; paramTypes(*params); returnType = result.name } }
+                .map { it.getMethodInstance(loader) }
+        }
 
     companion object {
         private const val QUEUE_REFRESH_MS = 1_000L

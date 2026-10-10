@@ -5,10 +5,10 @@ import com.jaco.musicenhance.player.model.RepeatMode
 
 /** 5.2.9 IPC API. Read n0 directly; L1 masks unavailable services as REPEAT_ALL. */
 internal class KugouLiteRepeatSource(loader: ClassLoader) : NativeRepeatControl.Api {
-    private val utility = loader.loadClass("com.kugou.framework.service.util.PlaybackServiceUtil")
-    private val service = utility.getMethod("P0")
-    private val readMode = loader.loadClass("com.kugou.framework.service.IKugouPlaybackService").getMethod("n0")
-    private val setMode = utility.getMethod("S6", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+    private val api = KugouLiteApi(loader)
+    private val service = api.service
+    private val readMode = api.readMode
+    private val setMode = api.setMode
 
     override fun read() = decode(readMode.invoke(service.invoke(null)) as Int)
 

@@ -14,21 +14,19 @@ internal class KugouLiteArtworkSource(loader: ClassLoader) : PlaylistArtworkSour
             (artist.isBlank() || player.artist.isBlank() || artist == player.artist.trim())
     }
 
-    private val service = loader.loadClass("com.kugou.framework.service.util.PlaybackServiceUtil")
+    private val api = KugouLiteApi(loader)
     private val songType = loader.loadClass("com.kugou.framework.service.entity.KGMusicWrapper")
     // s0 is current, I1 is NEXT; using I1 makes artwork/lyrics fail metadata validation.
-    private val current = service.getMethod("s0")
+    private val current = api.currentSong
     private val hash = songType.getMethod("getHashValue")
     private val mixId = songType.getMethod("getMixId")
     private val title = songType.getMethod("getTrackName")
     private val artist = songType.getMethod("getArtistName")
-    private val image = songType.getMethod("b1") // KGMusic.getImgUrl(), or the local KGFile image URL.
-    private val queueSize by lazy { service.getMethod("V1") }
-    private val queuePosition by lazy { service.getMethod("N1") }
-    private val queueMode by lazy { service.getMethod("M1") }
-    private val queueRange by lazy {
-        service.getMethod("J1", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-    }
+    private val image = api.image
+    private val queueSize by lazy { api.queue("size") }
+    private val queuePosition by lazy { api.queue("position") }
+    private val queueMode by lazy { api.queue("mode") }
+    private val queueRange by lazy { api.queue("range") }
 
     private fun read(native: Any? = current.invoke(null)): Song? {
         native ?: return null

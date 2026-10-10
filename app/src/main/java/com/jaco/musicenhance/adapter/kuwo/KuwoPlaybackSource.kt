@@ -11,6 +11,7 @@ import com.jaco.musicenhance.player.model.LyricsSnapshot
 import com.jaco.musicenhance.player.model.LyricsStatus
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 import java.util.WeakHashMap
+import java.lang.reflect.Method
 
 /** Kuwo 12.2.2.4's native lyric action and playback data, independent of MediaSession callbacks. */
 internal class KuwoPlaybackSource(
@@ -69,9 +70,9 @@ internal class KuwoPlaybackSource(
     }
 
     private class Api(loader: ClassLoader) {
-        private val getControl = loader.loadClass("q1.b").getMethod("e0")
-        private val controlType = loader.loadClass("cn.kuwo.mod.playcontrol.c")
-        private val getSong = controlType.getMethod("X")
+        private val getControl = KuwoInterfaceRules.playerFactory(loader)
+        private val controlType = getControl.returnType
+        private val getSong = KuwoInterfaceRules.currentSong(loader, controlType)
         private val getStatus = controlType.getMethod("getStatus")
         private val seek = controlType.getMethod("seek", Int::class.javaPrimitiveType)
         private val resume = controlType.getMethod("continuePlay")
@@ -93,11 +94,12 @@ internal class KuwoPlaybackSource(
 
     companion object {
         private val lyricSongs = WeakHashMap<Any, Long>()
+        private val installedDispatchers = mutableSetOf<Method>()
 
         /** The dispatcher supplies the song identity before publishing the decoded lyric object. */
         fun install(loader: ClassLoader) = safeHook("Kuwo lyrics association") {
-            val dispatcher = loader.loadClass("cn.kuwo.mod.lyrics.d0")
-            val method = dispatcher.declaredMethods.single { it.name == "i" && it.parameterCount == 5 }
+            val method = KuwoInterfaceRules.lyricsDispatch(loader)
+            if (method in installedDispatchers) return@safeHook
             module.installHook(method, "musicenhance.kuwo.lyrics") { chain ->
                 safeHook("Kuwo lyric identity") {
                     val song = chain.args[0]
@@ -109,37 +111,39 @@ internal class KuwoPlaybackSource(
                 }
                 chain.proceed()
             }
+            installedDispatchers.add(method)
         }
     }
 
-    class Reader(loader: ClassLoader) {
-        private val modules = loader.loadClass("q1.b")
-        private val lyricsApi = loader.loadClass("cn.kuwo.mod.lyrics.f")
-        private val playApi = loader.loadClass("cn.kuwo.mod.playcontrol.c")
-        private val dataApi = loader.loadClass("cn.kuwo.mod.lyrics.e")
-        private val lineType = loader.loadClass("cn.kuwo.mod.lyrics.j")
+    class Reader(private val loader: ClassLoader) {
+        // An unresolved optional lyric contract must not prevent the independent player opening.
+        // Kotlin lazy retries after an exception, once the background discovery batch completes.
+        private val api by lazy { LyricsApi(loader) }
+        private val artwork by lazy {
+            val factory = KuwoInterfaceRules.lyricsFactory(loader)
+            factory to KuwoInterfaceRules.originalArtwork(loader, factory.returnType)
+        }
         private var lastData: Any? = null
         private var lastOffsetMs = Long.MIN_VALUE
         private var lastSnapshot: LyricsSnapshot? = null
 
         fun readLyrics(player: PlayerSnapshot): LyricsSnapshot? {
-            val control = modules.getMethod("e0").invoke(null) ?: return null
-            val song = playApi.getMethod("X").invoke(control) ?: return null
+            val native = api
+            val control = native.getControl.invoke(null) ?: return null
+            val song = native.getSong.invoke(control) ?: return null
             val id = song.javaClass.getField("rid").getLong(song)
             if (song.javaClass.getField("name").get(song) != player.title) return null
-            val manager = modules.getMethod("O").invoke(null) ?: return null
-            val data = lyricsApi.getMethod("Wc").invoke(manager) ?: return null
+            val manager = native.getLyrics.invoke(null) ?: return null
+            val data = native.originalLyrics.invoke(manager) ?: return null
             if (synchronized(lyricSongs) { lyricSongs[data] } != id) return null
-            val offsetMs = (dataApi.getMethod("a").invoke(data) as Number).toLong()
+            val offsetMs = (native.offset.invoke(data) as Number).toLong()
             val key = "$id\u0000${player.metadataKey}"
             if (lastData === data && lastOffsetMs == offsetMs && lastSnapshot?.trackKey == key) return lastSnapshot
-            val rows = dataApi.getMethod("q").invoke(data) as? List<*> ?: return null
-            val startField = lineType.getField("b")
-            val textField = lineType.getField("d")
+            val rows = native.rows.invoke(data) as? List<*> ?: return null
             val lines = rows.mapNotNull { row ->
                 if (row == null) return@mapNotNull null
-                val timeMs = (startField.get(row) as? Number)?.toLong() ?: return@mapNotNull null
-                val text = (textField.get(row) as? String)?.trim().orEmpty()
+                val timeMs = (native.start.get(row) as? Number)?.toLong() ?: return@mapNotNull null
+                val text = (native.text.get(row) as? String)?.trim().orEmpty()
                 if (text.isBlank()) null else LyricLine((timeMs - offsetMs).coerceAtLeast(0), text)
             }.sortedBy { it.startMs }
             lastData = data
@@ -150,8 +154,22 @@ internal class KuwoPlaybackSource(
 
         /** The module manager supplies artwork without creating a flip page or scanning Views. */
         fun readArtwork(): Bitmap? = runCatching {
-            val manager = modules.getMethod("O").invoke(null) ?: return null
-            (lyricsApi.getMethod("h").invoke(manager) as? Bitmap)?.takeUnless { it.isRecycled }
+            val (factory, getter) = artwork
+            val manager = factory.invoke(null) ?: return null
+            (getter.invoke(manager) as? Bitmap)?.takeUnless { it.isRecycled }
         }.getOrNull()
+
+        private class LyricsApi(loader: ClassLoader) {
+            val getControl = KuwoInterfaceRules.playerFactory(loader)
+            val getSong = KuwoInterfaceRules.currentSong(loader, getControl.returnType)
+            val getLyrics = KuwoInterfaceRules.lyricsFactory(loader)
+            private val data = KuwoInterfaceRules.lyricsDispatch(loader).parameterTypes[2]
+            val originalLyrics = KuwoInterfaceRules.originalLyrics(loader, getLyrics.returnType, data)
+            val offset = KuwoInterfaceRules.lyricOffset(loader, data)
+            val rows = KuwoInterfaceRules.lyricRows(loader, data)
+            private val row = KuwoInterfaceRules.lyricRowType(loader, rows)
+            val start = KuwoInterfaceRules.lyricStart(loader, row)
+            val text = KuwoInterfaceRules.lyricText(loader, row)
+        }
     }
 }

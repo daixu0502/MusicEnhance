@@ -4,50 +4,47 @@ import android.app.Activity
 import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.hook.safeHook
 import com.jaco.musicenhance.hook.moduleInfo
-import android.view.View
 import com.jaco.musicenhance.hook.PlayerActivityRouter
 import com.jaco.musicenhance.adapter.NativePlayerPage
 import java.lang.ref.WeakReference
+import java.lang.reflect.Executable
 import java.util.WeakHashMap
+import io.github.libxposed.api.XposedInterface
 
 /** Apple Music 6.5.2: audio uses a bottom sheet; video activities are deliberately excluded. */
 internal object ApplePlayerHooks {
     private val activities = WeakHashMap<Activity, Boolean>()
     private var playerType: Class<*>? = null
+    private var api: AppleSheetApi? = null
+    private val installed = mutableSetOf<Executable>()
 
     fun install(loader: ClassLoader) {
         safeHook("Apple Music audio sheet") {
-            val type = loader.loadClass("com.apple.android.music.common.activity.PlayerActivity")
-            val sheetType = loader.loadClass("com.google.android.material.bottomsheet.BottomSheetBehavior")
-            // H is setStateInternal in this APK. This also covers swipe expansion/collapse.
-            val stateChanged = sheetType.getDeclaredMethod("H", Int::class.javaPrimitiveType)
-            type.getMethod("o1")
-            type.getMethod("h1", BooleanArray::class.java)
-            type.getMethod("m1")
-            type.getField("a1")
-            playerType = type
+            val sheetApi = AppleSheetApi(loader)
+            api = sheetApi
+            playerType = sheetApi.playerType
             // Mini-player data binding calls G(3) directly and never enters PlayerActivity.j1.
             // Intercept the sheet request before its settling animation starts; L also covers drags.
             val requests = listOf(
-                sheetType.getMethod("G", Int::class.javaPrimitiveType) to 0,
-                sheetType.getMethod("L", View::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType) to 1,
+                sheetApi.request to 0,
+                sheetApi.settle to 1,
             )
             for ((method, stateIndex) in requests) {
-                module.installHook(method, "musicenhance.apple.sheet.request.${method.name}") { chain ->
+                hook(method, "musicenhance.apple.sheet.request.${method.name}") { chain ->
                     var handled = false
                     if (chain.args[stateIndex] == 3) safeHook("Apple Music early audio sheet") {
-                        val activity = activities.keys.firstOrNull { type.getField("a1").get(it) === chain.thisObject }
+                        val activity = activities.keys.firstOrNull { sheetApi.sheet.get(it) === chain.thisObject }
                         handled = activity?.let(::show) == true
                         if (activity != null) moduleInfo("Apple Music sheet request: method=${method.name}, intercepted=$handled")
                     }
                     if (handled) null else chain.proceed()
                 }
             }
-            module.installHook(stateChanged, "musicenhance.apple.sheet.state") { chain ->
+            hook(sheetApi.changed, "musicenhance.apple.sheet.state") { chain ->
                 val result = chain.proceed()
                 safeHook("Apple Music sheet state") {
                     activities.keys.toList().forEach { activity ->
-                        if (type.getField("a1").get(activity) === chain.thisObject) {
+                        if (sheetApi.sheet.get(activity) === chain.thisObject) {
                             // Don't dismiss the pending launch during STATE_SETTLING/DRAGGING.
                             when (chain.args[0] as? Int) {
                                 3 -> show(activity)
@@ -61,6 +58,12 @@ internal object ApplePlayerHooks {
         }
     }
 
+    @Synchronized private fun hook(executable: Executable, id: String, hooker: XposedInterface.Hooker) {
+        if (executable in installed) return
+        module.installHook(executable, id, hooker)
+        installed.add(executable)
+    }
+
     fun observe(activity: Activity) {
         if (playerType?.isInstance(activity) != true) return
         activities[activity] = true
@@ -68,25 +71,25 @@ internal object ApplePlayerHooks {
     }
 
     private fun reconcile(activity: Activity) {
-        val type = playerType ?: return
-        if (type.getMethod("o1").invoke(activity) == true) {
+        val sheetApi = api ?: return
+        if (sheetApi.isExpanded(activity)) {
             show(activity)
         }
     }
 
     private fun show(activity: Activity): Boolean {
-        val type = playerType ?: return false
-        val identity = type.getField("a1").get(activity) ?: return false
+        val sheetApi = api ?: return false
+        val identity = sheetApi.sheet.get(activity) ?: return false
         val pageId = System.identityHashCode(identity)
         activities[activity] = true
         val owner = WeakReference(activity)
         val accepted = PlayerActivityRouter.onNativePageShown(activity, NativePlayerPage(pageId, onLaunchFailed = {
             owner.get()?.takeUnless { it.isDestroyed || it.isFinishing }?.let {
-                if (type.getMethod("o1").invoke(it) != true) type.getMethod("j1", BooleanArray::class.java).invoke(it, booleanArrayOf(true))
+                if (!sheetApi.isExpanded(it)) sheetApi.expand.invoke(it, booleanArrayOf(true))
             }
         }) {
             owner.get()?.let {
-                type.getMethod("h1", BooleanArray::class.java).invoke(it, booleanArrayOf(true))
+                sheetApi.collapse.invoke(it, booleanArrayOf(true))
                 // An intercepted sheet was already collapsed, so its state callback may never fire.
                 PlayerActivityRouter.onNativePageHidden(it, pageId)
             }
@@ -94,14 +97,14 @@ internal object ApplePlayerHooks {
         })
         // Swipe/resume fallback may have already expanded the sheet. Collapse it before making the enhanced window translucent,
         // while our Activity opens, rather than exposing a collapsing native player on return.
-        if (accepted && identity.javaClass.getField("G").getInt(identity) != 4) {
-            type.getMethod("h1", BooleanArray::class.java).invoke(activity, booleanArrayOf(true))
+        if (accepted && sheetApi.state.getInt(identity) != 4) {
+            sheetApi.collapse.invoke(activity, booleanArrayOf(true))
         }
         return accepted
     }
 
     private fun hide(activity: Activity) {
-        val identity = playerType?.getField("a1")?.get(activity) ?: return
+        val identity = api?.sheet?.get(activity) ?: return
         PlayerActivityRouter.onNativePageHidden(activity, System.identityHashCode(identity))
     }
 }

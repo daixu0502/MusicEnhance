@@ -10,12 +10,15 @@ import com.jaco.musicenhance.player.model.LyricsSnapshot
 import com.jaco.musicenhance.player.model.LyricsStatus
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 import java.util.WeakHashMap
+import java.lang.reflect.Executable
+import io.github.libxposed.api.XposedInterface
 
 /** Owns a native lyrics ViewModel so loading doesn't require opening Apple's lyrics tab. */
 internal class AppleLyricsProvider(
     private val application: Application,
     private val currentItem: (PlayerSnapshot) -> Any?,
 ) : LyricsProvider {
+    private val api by lazy { AppleLyricsApi(application.classLoader) }
     private var viewModel: Any? = null
     private var expectedKey = ""
     private var metadataKey = ""
@@ -40,13 +43,12 @@ internal class AppleLyricsProvider(
                 val status = viewModel?.let { synchronized(requests) { requests[it]?.snapshot?.status } }
                 if (key != expectedKey || (status != LyricsStatus.READY && nowMs - requestStartedAtMs >= RETRY_INTERVAL_MS)) {
                     clearViewModel()
-                    val type = application.classLoader.loadClass(VIEW_MODEL)
+                    val type = api.type
                     val model = type.getConstructor(Application::class.java).newInstance(application).also { viewModel = it }
                     synchronized(requests) { requests[model] = Request(id, queueId, LyricsSnapshot(key, LyricsStatus.LOADING)) }
                     expectedKey = key
                     requestStartedAtMs = nowMs
-                    val itemType = application.classLoader.loadClass("com.apple.android.music.model.PlaybackItem")
-                    type.getMethod("loadLyrics", itemType).invoke(model, item)
+                    api.load.invoke(model, item)
                 }
             }.onFailure {
                 expectedKey = ""
@@ -80,15 +82,14 @@ internal class AppleLyricsProvider(
     }
 
     companion object {
-        private const val VIEW_MODEL = "com.apple.android.music.player.viewmodel.PlayerLyricsViewModel"
         private const val RETRY_INTERVAL_MS = 30_000L
         private data class Request(val id: String, val queueId: Long, val snapshot: LyricsSnapshot)
         private val requests = WeakHashMap<Any, Request>()
+        private val installed = mutableSetOf<Executable>()
 
         fun install(loader: ClassLoader) = safeHook("Apple Music timed lyrics") {
-            val type = loader.loadClass(VIEW_MODEL)
-            val method = type.declaredMethods.single { it.name == "buildTimeRangeToLyricsMap" }
-            module.installHook(method, "musicenhance.apple.lyrics") { chain ->
+            val method = AppleLyricsApi(loader).publish
+            hook(method, "musicenhance.apple.lyrics") { chain ->
                 val result = chain.proceed()
                 val model = chain.thisObject
                 val request = synchronized(requests) { requests[model] }
@@ -120,6 +121,12 @@ internal class AppleLyricsProvider(
                 }
                 result
             }
+        }
+
+        @Synchronized private fun hook(executable: Executable, id: String, hooker: XposedInterface.Hooker) {
+            if (executable in installed) return
+            module.installHook(executable, id, hooker)
+            installed.add(executable)
         }
 
         private fun Any.call(name: String): Any? = javaClass.getMethod(name).invoke(this)

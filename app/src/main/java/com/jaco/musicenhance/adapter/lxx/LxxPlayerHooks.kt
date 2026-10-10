@@ -10,15 +10,19 @@ import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.hook.safeHook
 import org.json.JSONObject
+import com.jaco.musicenhance.adapter.discovery.HostInterfaces
 import java.lang.ref.WeakReference
 import java.lang.reflect.Proxy
+import java.lang.reflect.Executable
 import java.util.WeakHashMap
+import io.github.libxposed.api.XposedInterface
 
 /** 26.09.20 RNN: intercept only PlayDetailScreen, on the navigation module's UI-thread path. */
 internal object LxxPlayerHooks {
     private var installedApi: Api? = null
     private val pages = WeakHashMap<Activity, Page>()
     private var restoring = false
+    private val installed = mutableSetOf<Executable>()
 
     private class Page(val bridge: WeakReference<Any>, val id: String, val arguments: Array<Any?>) {
         var nativeShown = false
@@ -27,7 +31,7 @@ internal object LxxPlayerHooks {
 
     fun install(loader: ClassLoader) = safeHook("LX-X player navigation") {
         val api = Api(loader)
-        module.installHook(api.push, "musicenhance.lxx.navigation.push") { chain ->
+        hook(api.push, "musicenhance.lxx.navigation.push") { chain ->
             var intercepted = false
             safeHook("LX-X player entry") {
                 val node = chain.args.firstOrNull() ?: return@safeHook
@@ -46,7 +50,7 @@ internal object LxxPlayerHooks {
             }
             if (intercepted) null else chain.proceed()
         }
-        module.installHook(api.appeared, "musicenhance.lxx.navigation.appeared") { chain ->
+        hook(api.appeared, "musicenhance.lxx.navigation.appeared") { chain ->
             val result = chain.proceed()
             safeHook("LX-X visible native component") {
                 val context = api.eventContext.get(chain.thisObject)
@@ -66,6 +70,12 @@ internal object LxxPlayerHooks {
         }
         installedApi = api
         moduleInfo("LX-X native player route installed (26.09.20)")
+    }
+
+    @Synchronized private fun hook(executable: Executable, id: String, hooker: XposedInterface.Hooker) {
+        if (executable in installed) return
+        module.installHook(executable, id, hooker)
+        installed.add(executable)
     }
 
     fun observe(activity: Activity) {
@@ -135,23 +145,47 @@ internal object LxxPlayerHooks {
         private val bridgeType = loader.loadClass("com.reactnativenavigation.react.NavigationModule")
         private val promiseType = loader.loadClass("com.facebook.react.bridge.Promise")
         private val readableMap = loader.loadClass("com.facebook.react.bridge.ReadableMap")
-        val push = bridgeType.declaredMethods.single {
+        val push = HostInterfaces.method(loader, "lxx.navigation.push.v1", known = { bridgeType.declaredMethods.single {
             it.name == "lambda\$push\$3" && it.parameterCount == 4 && it.parameterTypes.last() == promiseType
+        } }, validate = { it.parameterCount == 4 && it.parameterTypes.last() == promiseType &&
+            it.parameterTypes[0].declaredFields.count { field -> field.type == JSONObject::class.java } == 1 }) {
+            methods { matcher { declaredClass = bridgeType.name; paramCount = 4; usingEqStrings("push") } }
+                .map { it.getMethodInstance(loader) }
         }.apply { isAccessible = true }
         val nodeData = push.parameterTypes[0].declaredFields.single { it.type == JSONObject::class.java }.apply { isAccessible = true }
         val nodeId = push.parameterTypes[0].declaredFields.single { it.type == String::class.java }.apply { isAccessible = true }
         val activity = loader.loadClass("com.facebook.react.bridge.ReactContextBaseJavaModule")
             .getDeclaredMethod("getCurrentActivity").apply { isAccessible = true }
-        val pop = bridgeType.getDeclaredMethod("lambda\$pop\$5", String::class.java, readableMap, String::class.java, promiseType)
-            .apply { isAccessible = true }
+        val pop = HostInterfaces.method(loader, "lxx.navigation.pop.v1", known = {
+            bridgeType.getDeclaredMethod("lambda\$pop\$5", String::class.java, readableMap, String::class.java, promiseType)
+        }, validate = { it.parameterTypes.contentEquals(arrayOf(String::class.java, readableMap, String::class.java, promiseType)) }) {
+            methods { matcher { declaredClass = bridgeType.name; paramTypes(String::class.java, readableMap, String::class.java, promiseType); usingEqStrings("pop") } }
+                .map { it.getMethodInstance(loader) }
+        }.apply { isAccessible = true }
         private val eventEmitter = bridgeType.getDeclaredField("eventEmitter").apply { isAccessible = true }
-        val appeared = eventEmitter.type.declaredMethods.single { it.name == "f" && it.parameterCount == 3 && it.parameterTypes[0] == String::class.java }
+        val appeared = HostInterfaces.method(loader, "lxx.navigation.appeared.v1", known = {
+            eventEmitter.type.declaredMethods.single { it.name == "f" && it.parameterCount == 3 && it.parameterTypes[0] == String::class.java }
+        }, validate = { it.parameterCount == 3 && it.parameterTypes[0] == String::class.java }) {
+            methods { matcher { declaredClass = eventEmitter.type.name; paramCount = 3; usingEqStrings("RNN.ComponentDidAppear") } }
+                .map { it.getMethodInstance(loader) }
+        }
         val eventContext = eventEmitter.type.declaredFields.single { android.content.Context::class.java.isAssignableFrom(it.type) }.apply { isAccessible = true }
         val contextActivity = eventContext.type.getMethod("getCurrentActivity")
         private val now = bridgeType.getDeclaredField("now").apply { isAccessible = true }
-        private val completion = loader.loadClass("com.reactnativenavigation.react.k")
+        private val completion = HostInterfaces.type(loader, "lxx.navigation.completion.v1", known = {
+            loader.loadClass("com.reactnativenavigation.react.k")
+        }, validate = { type -> type.constructors.any { it.parameterTypes.contentEquals(arrayOf(String::class.java, String::class.java, promiseType, eventEmitter.type, now.type)) } }) {
+            methods {
+                searchPackages("com.reactnativenavigation.react")
+                matcher { name = "<init>"; paramTypes(String::class.java, String::class.java, promiseType, eventEmitter.type, now.type) }
+            }.map { it.getConstructorInstance(loader).declaringClass }
+        }
         private val completionConstructor = completion.getConstructor(String::class.java, String::class.java, promiseType, eventEmitter.type, now.type)
-        private val completed = completion.getMethod("a", String::class.java)
+        private val completed = HostInterfaces.method(loader, "lxx.navigation.completed.v1", known = { completion.getMethod("a", String::class.java) },
+            validate = { it.parameterTypes.contentEquals(arrayOf(String::class.java)) && it.returnType == Void.TYPE }) {
+            methods { matcher { declaredClass = completion.name; paramTypes(String::class.java); returnType = "void"; usingEqStrings("commandId", "completionTime") } }
+                .map { it.getMethodInstance(loader) }
+        }
         private val makeNativeMap = loader.loadClass("com.facebook.react.bridge.Arguments")
             .getMethod("makeNativeMap", Map::class.java)
 

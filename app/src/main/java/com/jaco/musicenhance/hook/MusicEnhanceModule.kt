@@ -5,6 +5,7 @@ import com.jaco.musicenhance.Prefs
 import com.jaco.musicenhance.adapter.MusicAppProfile
 import com.jaco.musicenhance.adapter.MusicAppAdapters
 import com.jaco.musicenhance.adapter.MusicAppRegistry
+import com.jaco.musicenhance.adapter.discovery.HostInterfaces
 import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
@@ -49,9 +50,18 @@ class MusicEnhanceModule : XposedModule() {
         }
         // QQ Music may create MediaSession and AudioTrack in a :service process. Install in every
         // process belonging to the package; the Activity hook is harmless where no Activity exists.
+        HostInterfaces.configure(param.classLoader, param.applicationInfo, processName)
+        HostInterfaces.onResolved(param.classLoader, "native-hooks") {
+            installNativeHooks(profile, param.classLoader)
+        }
         MusicAppHooks.install(processName)
-        MusicAppAdapters.installNativeHooks(profile, param.classLoader)
+        installNativeHooks(profile, param.classLoader)
     }
+
+    private fun installNativeHooks(profile: MusicAppProfile, loader: ClassLoader) =
+        safeHook("${profile.displayName} native interfaces") {
+            MusicAppAdapters.installNativeHooks(profile, loader)
+        }
 
     internal fun installHook(
         executable: java.lang.reflect.Executable,

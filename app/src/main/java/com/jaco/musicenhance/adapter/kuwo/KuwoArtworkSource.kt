@@ -8,18 +8,15 @@ import com.jaco.musicenhance.player.artwork.PlaylistArtworkWindow
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 
 /** Verified against Kuwo 12.2.2.4; snapshots avoid retaining mutable native Music objects. */
-internal class KuwoArtworkSource(loader: ClassLoader) : PlaylistArtworkSource<KuwoArtworkSource.Song> {
+internal class KuwoArtworkSource(private val loader: ClassLoader) : PlaylistArtworkSource<KuwoArtworkSource.Song> {
     data class Song(val id: Long, val title: String, val artist: String, val album: String, val address: String?)
 
-    private val modules = loader.loadClass("q1.b")
-    private val controlType = loader.loadClass("cn.kuwo.mod.playcontrol.c")
+    private val controlType = KuwoInterfaceRules.playbackType(loader)
     private val musicType = loader.loadClass("cn.kuwo.base.bean.Music")
     private val listType = loader.loadClass("cn.kuwo.base.bean.MusicList")
-    private val urlsType = loader.loadClass("cn.kuwo.base.utils.s2")
-    private val queueType by lazy { loader.loadClass("cn.kuwo.mod.playcontrol.n") }
-    private val controlMethod = modules.getMethod("e0")
-    private val currentMethod = controlType.getMethod("X")
-    private val queueMethod = controlType.getMethod("a7")
+    private val controlMethod = KuwoInterfaceRules.playerFactory(loader)
+    private val currentMethod = KuwoInterfaceRules.currentSong(loader, controlType)
+    private val queueMethod by lazy { KuwoInterfaceRules.activeQueue(loader, controlType) }
     private val modeMethod = controlType.getMethod("getPlayMode")
     private val songsMethod = listType.getMethod("getPlayList")
     private val idField = musicType.getField("rid")
@@ -27,10 +24,7 @@ internal class KuwoArtworkSource(loader: ClassLoader) : PlaylistArtworkSource<Ku
     private val artistField = musicType.getField("artist")
     private val albumField = musicType.getField("album")
     private val pictureMethod = musicType.getMethod("getItemPicUrl")
-    private val lookupMethod = urlsType.getMethod(
-        "p9", Long::class.javaPrimitiveType, String::class.java, String::class.java,
-        String::class.java, Int::class.javaPrimitiveType,
-    )
+    private val lookupMethod = KuwoInterfaceRules.artworkLookup(loader)
 
     override fun currentSong(player: PlayerSnapshot): Song? {
         val song = readSong(currentMethod.invoke(controlMethod.invoke(null))) ?: return null
@@ -57,6 +51,7 @@ internal class KuwoArtworkSource(loader: ClassLoader) : PlaylistArtworkSource<Ku
         if (currentIndex < 0) return emptyList()
         val mode = (modeMethod.invoke(control) as? Number)?.toInt()
         val shuffled = if (mode == 3) shuffleOrder(nativeSongs.size, currentIndex) else null
+        if (mode == 3 && shuffled == null) return emptyList()
         val indices = if (shuffled != null) {
             // At shuffle boundaries Kuwo can generate a new permutation; do not predict that order.
             PlaylistArtworkWindow.indices(shuffled.size, shuffled.indexOf(currentIndex), wrap = false).map { shuffled[it] }
@@ -66,10 +61,11 @@ internal class KuwoArtworkSource(loader: ClassLoader) : PlaylistArtworkSource<Ku
     }
 
     private fun shuffleOrder(size: Int, currentIndex: Int): IntArray? = runCatching {
-        val queue = queueType.getMethod("O").invoke(null) ?: return null
-        val order = (queueType.getDeclaredField("m").apply { isAccessible = true }.get(queue) as? IntArray)?.clone()
+        val queueType = KuwoInterfaceRules.queueList(loader).declaringClass
+        val queue = KuwoInterfaceRules.queueFactory(loader, queueType).invoke(null) ?: return null
+        val order = (KuwoInterfaceRules.shuffleOrder(loader, queueType).get(queue) as? IntArray)?.clone()
             ?: return null
-        val position = queueType.getDeclaredField("o").apply { isAccessible = true }.getInt(queue)
+        val position = KuwoInterfaceRules.shufflePosition(loader, queueType).getInt(queue)
         order.takeIf {
             it.size == size && it.toSet().size == size && it.all { index -> index in 0 until size } &&
                 position in it.indices && it[position] == currentIndex

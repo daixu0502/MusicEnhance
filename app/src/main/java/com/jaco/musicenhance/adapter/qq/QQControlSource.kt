@@ -5,7 +5,6 @@ import android.os.HandlerThread
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.player.model.PlayerControlState
 import com.jaco.musicenhance.player.model.PlayerSnapshot
-import java.lang.reflect.Modifier
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** QQ Music 20.8.5.8 / 20.9.0.8 service and collection store. Never opens a mode popup. */
@@ -101,17 +100,23 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
         if (released) return
         val playEnvironment = api.getPlayEnvironment.invoke(null)
         val mode = QQRepeatModes.decode(api.getPlayMode.invoke(playEnvironment) as Int)
-        val song = api.getPlaySong.invoke(playEnvironment)
-        val songId = song?.let { api.songId.invoke(it) as Long }
-        val songTitle = song?.let { api.songTitle.invoke(it) as? String }
-        val manager = api.userDataGet.invoke(null)
-        // An uninitialized collection cache is unknown, not "not liked".
-        val ready = api.isLikeDataInit.invoke(manager) == true
-        val favorite = if (song != null && ready) api.isILike.invoke(manager, song) as Boolean else null
-        val currentSong = api.getPlaySong.invoke(playEnvironment)
-        val currentId = currentSong?.let { api.songId.invoke(it) as Long }
-        if (currentId != songId || released) return
-        state = PlayerControlState(mode, favorite, songTitle)
+        val next = runCatching {
+            val song = api.getPlaySong.invoke(playEnvironment)
+            val songId = song?.let { api.songId.invoke(it) as Long }
+            val songTitle = song?.let { api.songTitle.invoke(it) as? String }
+            val manager = api.userDataGet.invoke(null)
+            // An uninitialized collection cache is unknown, not "not liked".
+            val ready = api.isLikeDataInit.invoke(manager) == true
+            val favorite = if (song != null && ready) api.isILike.invoke(manager, song) as Boolean else null
+            val currentSong = api.getPlaySong.invoke(playEnvironment)
+            val currentId = currentSong?.let { api.songId.invoke(it) as Long }
+            if (currentId != songId) null else PlayerControlState(mode, favorite, songTitle)
+        }.getOrElse { error ->
+            // A missing optional collection API must not hide the independent native repeat mode.
+            reportFailure(error)
+            PlayerControlState(repeatMode = mode)
+        }
+        if (next != null && !released) state = next
     }
 
     private fun reportFailure(error: Throwable) {
@@ -128,21 +133,19 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
         private val process = QQPlayProcessApi(classLoader)
         private val ipc = process.type
         private val song = type("com.tencent.qqmusicplayerprocess.songinfo.SongInfo")
-        private val users = type("com.tencent.qqmusic.business.userdata.UserDataManager")
+        private val users by lazy { QQInterfaceRules.users(classLoader, song) }
         private val service = type("com.tencent.qqmusicplayerprocess.servicenew.IQQPlayerServiceNew")
         val getPlayEnvironment = process.getEnvironment
         val getPlayMode = ipc.getMethod("getPlayMode")
         val getPlaySong = ipc.getMethod("getPlaySong")
-        val songId = song.getMethod("C3")
-        val songTitle = song.getMethod("j3")
-        val userDataGet = users.getMethod("get")
-        val isILike = users.getMethod("isILike", song)
-        val isLikeDataInit = users.getMethod("isILikeDataInit")
-        val addFavorite = users.getMethod("addToILike", song)
-        val removeFavorite = users.getMethod("deleteFromILike", song)
-        val playerService = type("com.tencent.qqmusicplayerprocess.servicenew.k").declaredFields.single {
-            Modifier.isStatic(it.modifiers) && it.type == service
-        }.apply { isAccessible = true }
+        val songId by lazy { QQInterfaceRules.songId(classLoader, song) }
+        val songTitle by lazy { QQInterfaceRules.songTitle(classLoader, song) }
+        val userDataGet by lazy { users.getMethod("get") }
+        val isILike by lazy { users.getMethod("isILike", song) }
+        val isLikeDataInit by lazy { users.getMethod("isILikeDataInit") }
+        val addFavorite by lazy { users.getMethod("addToILike", song) }
+        val removeFavorite by lazy { users.getMethod("deleteFromILike", song) }
+        val playerService by lazy { QQInterfaceRules.playerService(classLoader, service) }
         val setPlayMode = service.getMethod("setPlayMode", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
         private val from = type("com.tencent.qqmusicplayerprocess.servicenew.FromInfo")
         val modeChangeSource = from.getField("value").getInt(from.getField("FROM_PLAY_MODE_POPUP_WINDOW").get(null))

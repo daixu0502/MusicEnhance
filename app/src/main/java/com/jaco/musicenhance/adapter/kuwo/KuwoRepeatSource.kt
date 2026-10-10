@@ -5,8 +5,8 @@ import com.jaco.musicenhance.player.model.RepeatMode
 
 /** 12.2.2.4: mode values verified against MIUIFlipPlayPageFragment's icon resources. */
 internal class KuwoRepeatSource(loader: ClassLoader) : NativeRepeatControl.Api {
-    private val player = loader.loadClass("q1.b").getMethod("e0")
-    private val type = loader.loadClass("cn.kuwo.mod.playcontrol.c")
+    private val player = KuwoInterfaceRules.playerFactory(loader)
+    private val type = player.returnType
     private val readMode = type.getMethod("getPlayMode")
     private val writeMode = type.getMethod("setPlayMode", Int::class.javaPrimitiveType)
 

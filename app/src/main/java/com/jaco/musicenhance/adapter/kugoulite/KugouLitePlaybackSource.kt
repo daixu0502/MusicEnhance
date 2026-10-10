@@ -51,20 +51,21 @@ internal class KugouLitePlaybackSource(
     }
 
     private class Api(loader: ClassLoader) {
-        private val utility = loader.loadClass("com.kugou.framework.service.util.PlaybackServiceUtil")
+        private val interfaces = KugouLiteApi(loader)
         private val serviceType = loader.loadClass("com.kugou.framework.service.IKugouPlaybackService")
         private val songType = loader.loadClass("com.kugou.framework.service.entity.KGMusicWrapper")
-        private val getService = utility.getMethod("P0")
-        private val getSong = utility.getMethod("s0")
+        private val getService = interfaces.service
+        private val getSong = interfaces.currentSong
         private val getHash = songType.getMethod("getHashValue")
         private val getMixId = songType.getMethod("getMixId")
         private val getTitle = songType.getMethod("getTrackName")
         private val getArtist = songType.getMethod("getArtistName")
-        private val seek = serviceType.getMethod("Pj", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        private val seek = interfaces.verified("playback.seek", serviceType, "Pj", Boolean::class.javaPrimitiveType!!,
+            Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
         private val isPlaying = serviceType.getMethod("isPlaying")
         // The AIDL interface declares play(), but 5.2.9's Binder proxy does not implement it.
         // PlaybackServiceUtil.e4 uses N9(source), which reaches the same explicit start operation.
-        private val play = serviceType.getMethod("N9", Int::class.javaPrimitiveType)
+        private val play = interfaces.verified("playback.play", serviceType, "N9", Void.TYPE, Int::class.javaPrimitiveType!!)
 
         fun song(): Song? {
             val song = getSong.invoke(null) ?: return null

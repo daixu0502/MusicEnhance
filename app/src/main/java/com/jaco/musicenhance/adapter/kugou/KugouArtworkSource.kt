@@ -1,6 +1,9 @@
 package com.jaco.musicenhance.adapter.kugou
 
 import com.jaco.musicenhance.adapter.kugoucommon.KugouArtworkAddresses
+import com.jaco.musicenhance.adapter.kugoucommon.KugouInterfaceFeatures
+import com.jaco.musicenhance.adapter.discovery.HostInterfaces
+import org.luckypray.dexkit.query.enums.StringMatchType
 import com.jaco.musicenhance.player.artwork.PlaylistArtworkSource
 import com.jaco.musicenhance.player.artwork.PlaylistArtworkWindow
 import com.jaco.musicenhance.player.model.PlayerSnapshot
@@ -13,19 +16,19 @@ internal class KugouArtworkSource(loader: ClassLoader) : PlaylistArtworkSource<K
     private val songs = KugouSongSource(loader)
     private val api = KugouApi(loader)
     private val type = loader.loadClass("com.kugou.framework.service.entity.KGMusicWrapper")
-    private val image = type.getMethod("f2")
-    private val avatar = type.getMethod("X1")
-    private val avatarHash = type.getMethod("d2")
-    private val queueSize = api.method("Q4", "R4")
-    private val queuePosition = api.method("v4", "w4")
-    private val queueMode = api.method("t4", "u4")
-    private val queueRange = api.method("l4", "m4", Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
+    private val image = KugouInterfaceRules.image(loader) { type.getMethod("f2") }
+    private val avatar by lazy { KugouInterfaceFeatures.verified(loader, "kugou", "artwork.avatar-address", type, "X1", String::class.java) }
+    private val avatarHash by lazy { KugouInterfaceFeatures.verified(loader, "kugou", "artwork.avatar-hash", type, "d2", String::class.java) }
+    private val queueSize by lazy { api.method("Q4", "R4") }
+    private val queuePosition by lazy { api.method("v4", "w4") }
+    private val queueMode by lazy { api.method("t4", "u4") }
+    private val queueRange by lazy { api.method("l4", "m4", Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!) }
     private val lookup by lazy { AvatarLookup(loader) }
 
     private fun read(native: Any?): Song? {
         val identity = songs.read(native) ?: return null
-        return Song(identity, (avatarHash.invoke(native) as? String).orEmpty().ifBlank { identity.hash },
-            listOfNotNull(avatar.invoke(native) as? String, image.invoke(native) as? String)
+        return Song(identity, runCatching { avatarHash.invoke(native) as? String }.getOrNull().orEmpty().ifBlank { identity.hash },
+            listOfNotNull(runCatching { avatar.invoke(native) as? String }.getOrNull(), image.invoke(native) as? String)
                 .filter { it.isNotBlank() && it != "-" }.distinct())
     }
     override fun currentSong(player: PlayerSnapshot) = read(songs.currentNative())?.takeIf { it.identity.matches(player) }
@@ -57,11 +60,27 @@ internal class KugouArtworkSource(loader: ClassLoader) : PlaylistArtworkSource<K
     }.distinct()
 
     private class AvatarLookup(loader: ClassLoader) {
-        private val type = loader.loadClass("com.kugou.android.mymusic.songAvatar.SongAvatarManager")
-        private val instance = type.getMethod("j")
-        private val cached = type.getMethod("l", Long::class.javaPrimitiveType, String::class.java)
-        private val request = type.getDeclaredMethod("h", List::class.java, Runnable::class.java).apply { isAccessible = true }
-        private val entryType = loader.loadClass(if (KugouApi(loader).updated) "ig5.b" else "ag5.b")
+        private val type = HostInterfaces.type(loader, "kugou.artwork.avatar-manager.v1",
+            { loader.loadClass("com.kugou.android.mymusic.songAvatar.SongAvatarManager") },
+            { owner -> owner.declaredMethods.any { it.returnType == owner && it.parameterCount == 0 } },
+        ) {
+            methods { searchPackages("com.kugou.android.mymusic.songAvatar"); matcher {
+                paramTypes("java.util.List", "java.lang.Runnable")
+                addUsingString("SongAvatarManager doFinalRequest ", StringMatchType.Contains)
+            } }.map { it.getClassInstance(loader) }.distinct()
+        }
+        private val instance = KugouInterfaceFeatures.verified(loader, "kugou", "artwork.avatar-instance", type, "j", type)
+        private val cached = KugouInterfaceFeatures.verified(loader, "kugou", "artwork.avatar-cached", type, "l", String::class.java,
+            Long::class.javaPrimitiveType!!, String::class.java)
+        private val request = HostInterfaces.method(loader, "kugou.artwork.avatar-request.v1",
+            { type.getDeclaredMethod("h", List::class.java, Runnable::class.java) },
+            { it.parameterTypes.contentEquals(arrayOf(List::class.java, Runnable::class.java)) && it.returnType == Void.TYPE },
+            discover = { emptyList() },
+        ).apply { isAccessible = true }
+        private val entryType = HostInterfaces.type(loader, "kugou.artwork.avatar-entry.v1",
+            { loader.loadClass(if (KugouApi(loader).updated) "ig5.b" else "ag5.b") },
+            { owner -> owner.constructors.any { it.parameterCount == 0 } }, discover = { emptyList() },
+        )
 
         fun resolve(song: Song, active: () -> Boolean): String? {
             val manager = instance.invoke(null) ?: return null

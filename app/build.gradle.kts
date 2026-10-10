@@ -13,8 +13,8 @@ android {
         applicationId = "com.jaco.musicenhance"
         minSdk = 34
         targetSdk = 37
-        versionCode = 20902
-        versionName = "2.9.2"
+        versionCode = 30000
+        versionName = "3.0.0"
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -112,4 +112,5 @@ dependencies {
     implementation(libs.libxposed.service)
     implementation(libs.miuix.ui)
     implementation(libs.miuix.preference)
+    implementation(libs.dexkit)
 }

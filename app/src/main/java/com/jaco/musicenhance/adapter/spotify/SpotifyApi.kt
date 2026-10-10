@@ -37,7 +37,10 @@ internal object SpotifyApi {
             return (if (previous) tracks.takeLast(3).asReversed() else tracks.take(3)).mapNotNull(::song)
         }
         val result = State(
-            song(read(native, "track")?.let { read(it, "h") }),
+            song(read(native, "track")?.let { optional ->
+                val loader = requireNotNull(optional.javaClass.classLoader) { "Spotify track Optional has no host classloader" }
+                SpotifyInterfaceRules.optionalValue(loader, optional.javaClass).invoke(optional)
+            }),
             songs("prevTracks", true), songs("nextTracks", false),
             when {
                 read(options, "shufflingContext") == true -> RepeatMode.SHUFFLE

@@ -10,7 +10,10 @@ import com.jaco.musicenhance.player.model.PlayerControlState
 
 internal object SaltPlayerAdapter : MusicPlayerAdapter {
     override val profile get() = SaltPlayerProfile
-    override fun installHooks(loader: ClassLoader) = SaltPlayerHooks.install(loader)
+    override fun installHooks(loader: ClassLoader) {
+        SaltPlayerHooks.install(loader)
+        SaltNativeDataHooks.install(loader)
+    }
     override fun onActivityReady(activity: Activity) = SaltPlayerHooks.observe(activity)
 
     override fun createSession(activity: Activity): PlayerSession {

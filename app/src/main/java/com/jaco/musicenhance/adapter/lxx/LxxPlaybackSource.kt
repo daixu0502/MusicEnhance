@@ -11,7 +11,11 @@ import com.jaco.musicenhance.player.PlayerDataSource
 import com.jaco.musicenhance.player.media.MediaSessionDataSource
 import com.jaco.musicenhance.player.model.PlayerControlState
 import com.jaco.musicenhance.player.model.PlayerSnapshot
+import com.jaco.musicenhance.adapter.discovery.HostInterfaces
+import java.lang.reflect.Modifier
+import java.lang.reflect.Executable
 import java.lang.ref.WeakReference
+import io.github.libxposed.api.XposedInterface
 
 /** TrackPlayer belongs to the main looper. Reads here are in-process getters, never native IPC. */
 internal class LxxPlaybackSource : PlayerDataSource by MediaSessionDataSource {
@@ -86,29 +90,47 @@ internal class LxxPlaybackSource : PlayerDataSource by MediaSessionDataSource {
         val play = type.getMethod("play")
         val pause = type.getMethod("pause")
         val seek = type.getMethod("seekTo", Long::class.javaPrimitiveType)
-        val manager = type.getDeclaredField("manager").apply { isAccessible = true }
-        val metadata = manager.type.getMethod("d")
+        val manager = HostInterfaces.field(loader, "lxx.playback.manager.v1", known = { type.getDeclaredField("manager") },
+            validate = { !Modifier.isStatic(it.modifiers) }) {
+            type.declaredFields.filter { field -> !Modifier.isStatic(field.modifiers) && field.type.declaredMethods.any(::isMetadata) }
+        }.apply { isAccessible = true }
+        val metadata = HostInterfaces.method(loader, "lxx.playback.metadata.v1", known = { manager.type.getMethod("d") },
+            validate = ::isMetadata) {
+            // This is TrackPlayer's metadata holder, whose unblurred art has a typed source URI.
+            manager.type.declaredMethods.filter(::isMetadata)
+        }.apply { isAccessible = true }
         val artwork = metadata.returnType.declaredFields.single { it.type == Bitmap::class.java }.apply { isAccessible = true }
         val artworkUri = metadata.returnType.declaredFields.single { it.type == Uri::class.java }.apply { isAccessible = true }
+
+        private fun isMetadata(method: java.lang.reflect.Method) = method.parameterCount == 0 &&
+            method.returnType.declaredFields.count { it.type == Bitmap::class.java } == 1 &&
+            method.returnType.declaredFields.count { it.type == Uri::class.java } == 1
     }
 
     companion object {
         private val PLAYING_STATES = setOf(3, 6) // STATE_PLAYING, STATE_BUFFERING in this TrackPlayer build.
         private var installedApi: Api? = null
         private var activePlayer = WeakReference<Any>(null)
+        private val installed = mutableSetOf<Executable>()
 
         fun install(loader: ClassLoader) = safeHook("LX-X TrackPlayer 26.09.20") {
             val api = Api(loader)
-            module.installHook(api.type.getMethod("initialize"), "musicenhance.lxx.player.ready") { chain ->
+            hook(api.type.getMethod("initialize"), "musicenhance.lxx.player.ready") { chain ->
                 val result = chain.proceed()
                 activePlayer = WeakReference(chain.thisObject)
                 result
             }
-            module.installHook(api.type.getMethod("destroy"), "musicenhance.lxx.player.destroy") { chain ->
+            hook(api.type.getMethod("destroy"), "musicenhance.lxx.player.destroy") { chain ->
                 if (activePlayer.get() === chain.thisObject) activePlayer.clear()
                 chain.proceed()
             }
             installedApi = api
+        }
+
+        @Synchronized private fun hook(executable: Executable, id: String, hooker: XposedInterface.Hooker) {
+            if (executable in installed) return
+            module.installHook(executable, id, hooker)
+            installed.add(executable)
         }
     }
 }

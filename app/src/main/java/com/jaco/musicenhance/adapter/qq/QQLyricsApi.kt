@@ -13,23 +13,24 @@ internal class QQLyricsApi(private val classLoader: ClassLoader) {
     private val process = QQPlayProcessApi(classLoader)
     private val playEnvironment = process.getEnvironment
     private val getPlaySong = process.type.getMethod("getPlaySong")
-    private val songTitle = songClass.getMethod("j3")
-    private val songId = songClass.getMethod("C3")
-    private val loaderClass = hostClass("com.tencent.qqmusic.business.lyricnew.load.manager.m")
-    private val listenerClass = hostClass("com.tencent.qqmusic.business.lyricnew.load.listener.c")
-    private val addListener = loaderClass.getMethod("c", listenerClass)
-    private val loadSong = loaderClass.getMethod("h", songClass)
-    private val clearLoader = loaderClass.getMethod("e")
-    private val resultClass = hostClass("com.tencent.qqmusic.business.lyricnew.load.model.b")
-    private val resultSong = resultClass.getMethod("f")
-    private val resultLyrics = resultClass.getMethod("c")
-    private val lyricClass = hostClass("com.lyricengine.base.k")
-    private val sentences = lyricClass.getField("e")
-    private val offset = lyricClass.getField("f")
-    private val lyricType = lyricClass.getField("a")
-    private val sentenceClass = hostClass("com.lyricengine.base.t")
-    private val sentenceText = sentenceClass.getField("a")
-    private val sentenceStartTime = sentenceClass.getField("b")
+    private val songTitle = QQInterfaceRules.songTitle(classLoader, songClass)
+    private val songId = QQInterfaceRules.songId(classLoader, songClass)
+    private val loaderClass = QQInterfaceRules.lyricLoader(classLoader)
+    private val addListener = QQInterfaceRules.addLyricListener(classLoader, loaderClass)
+    private val listenerClass = addListener.parameterTypes.single()
+    private val loadSong = QQInterfaceRules.loadLyrics(classLoader, loaderClass, songClass)
+    private val clearLoader = QQInterfaceRules.clearLyrics(classLoader, loaderClass)
+    private val resultClass = listenerClass.methods.single {
+        it.name == "onLoadSuc" && it.parameterCount == 1
+    }.parameterTypes.single()
+    private val resultSong = QQInterfaceRules.resultSong(classLoader, resultClass, songClass)
+    private val resultLyrics = QQInterfaceRules.resultLyrics(classLoader, resultClass)
+    private val lyricClass = resultLyrics.returnType
+    private val sentences = QQInterfaceRules.lyricSentences(classLoader, lyricClass)
+    private val offset = QQInterfaceRules.lyricOffset(classLoader, lyricClass)
+    private val lyricType = QQInterfaceRules.lyricType(classLoader, lyricClass)
+    private val sentenceStartTime = QQInterfaceRules.sentenceStart(classLoader, lyricClass)
+    private val sentenceText = QQInterfaceRules.sentenceText(classLoader, sentenceStartTime.declaringClass)
 
     /** May perform IPC; call from a worker. */
     fun currentSong(expectedTitle: String): Song? {

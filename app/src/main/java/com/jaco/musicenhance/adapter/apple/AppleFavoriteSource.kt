@@ -3,26 +3,24 @@ package com.jaco.musicenhance.adapter.apple
 import android.os.SystemClock
 import com.jaco.musicenhance.hook.moduleInfo
 import java.lang.reflect.Proxy
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.Executor
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /** Same native operation as player.b1.s0 (the star button), including account/library checks. */
-internal class AppleFavoriteSource(loader: ClassLoader) {
-    private val libraryType = loader.loadClass("com.apple.android.medialibrary.library.a")
-    private val itemType = loader.loadClass("com.apple.android.music.model.BaseContentItem")
-    private val likeType = loader.loadClass("com.apple.android.medialibrary.library.MediaLibrary\$f")
-    private val actions = loader.loadClass("B8.s")
-    private val supported = actions.getMethod("r", itemType)
-    private val update = actions.getMethod("u", itemType, likeType, Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
-    private val query = actions.getMethod("w", itemType)
-    private val singleType = loader.loadClass("Sf.o")
-    private val consumerType = loader.loadClass("Wf.e")
-    private val disposableType = loader.loadClass("Tf.b")
-    private val mainScheduler = loader.loadClass("Rf.a").getMethod("a").invoke(null)
-    private val observeOn = singleType.getMethod("i", loader.loadClass("Sf.n"))
-    private val subscribe = singleType.getMethod("k", consumerType, consumerType)
+internal class AppleFavoriteSource(loader: ClassLoader, private val executor: Executor = worker) {
+    private val api by lazy { AppleFavoriteApi(loader) }
+    private val libraryType get() = api.libraryType
+    private val likeType get() = api.likeType
+    private val consumerType get() = api.consumerType
+    private val main = Handler(Looper.getMainLooper())
     private var identity: String? = null
     private var libraryItem: Any? = null
     private var subscription: Any? = null
-    private var generation = 0
+    @Volatile private var generation = 0
     private var loading = false
     private var nextReadAtMs = 0L
     private data class PendingChange(val item: Any, val previous: Boolean, val startedAtMs: Long)
@@ -43,7 +41,6 @@ internal class AppleFavoriteSource(loader: ClassLoader) {
                 cancelQuery()
                 confirm(pending.item, pending)
             } else if (SystemClock.elapsedRealtime() - pending.startedAtMs >= CONFIRMATION_TIMEOUT_MS) {
-                AppleFavoriteOperationHooks.forget(pending.item)
                 pendingChange = null
                 nextReadAtMs = 0L
                 moduleInfo("Apple Music favorite confirmation timed out; rereading library")
@@ -60,36 +57,54 @@ internal class AppleFavoriteSource(loader: ClassLoader) {
         nextReadAtMs = SystemClock.elapsedRealtime() + if (pendingChange != null) CONFIRM_POLL_MS else STATE_REFRESH_MS
         fun consumer(callback: (Any?) -> Unit): Any = Proxy.newProxyInstance(consumerType.classLoader, arrayOf(consumerType)) { proxy, method, args ->
             when (method.name) {
-                "accept" -> { if (generation == request) callback(args?.firstOrNull()); null }
+                "accept" -> {
+                    val value = args?.firstOrNull()
+                    val deliver = { if (generation == request) callback(value) }
+                    deliverOnMain(deliver)
+                    null
+                }
                 "toString" -> "MusicEnhance Apple favorite callback"
                 "hashCode" -> System.identityHashCode(proxy)
                 "equals" -> proxy === args?.firstOrNull()
                 else -> null
             }
         }
-        try {
-            // The native library schedules its own database work; only the copied result reaches UI.
-            val single = observeOn.invoke(query.invoke(null, item), mainScheduler)
-            subscription = subscribe.invoke(single, consumer { optional ->
-                loading = false
-                val result = optional?.takeIf { it.javaClass.getMethod("b").invoke(it) != true }
-                    ?.let { it.javaClass.getMethod("a").invoke(it) }
-                val pending = pendingChange
-                if (pending == null) libraryItem = result
-                else if (result != null && isConfirmed(result, pending)) confirm(result, pending)
-            }, consumer { error ->
-                loading = false
-                moduleInfo("Apple Music favorite query failed: $error")
-            })
-        } catch (error: Throwable) {
+        try { executor.execute {
+            if (generation != request) return@execute
+            try {
+                // Rx factories can defer database work until subscribe; both operations stay off UI.
+                val single = api.query.invoke(null, item)
+                val disposable = api.subscribe.invoke(single, consumer { optional ->
+                    loading = false
+                    val result = optional?.let(api::optionalItem)
+                    val pending = pendingChange
+                    if (pending == null) libraryItem = result
+                    else if (result != null && isConfirmed(result, pending)) confirm(result, pending)
+                }, consumer { error ->
+                    loading = false
+                    moduleInfo("Apple Music favorite query failed: $error")
+                })
+                // A release or next song may have arrived while the host was reading its library.
+                deliverOnMain {
+                    if (generation == request) subscription = disposable else dispose(disposable)
+                }
+            } catch (error: Throwable) {
+                deliverOnMain {
+                    if (generation == request) {
+                        loading = false
+                        moduleInfo("Apple Music favorite query failed: ${error.cause ?: error}")
+                    }
+                }
+            }
+        } } catch (error: RuntimeException) {
             loading = false
             throw error
         }
     }
 
     fun isAvailable(item: Any): Boolean {
-        val library = libraryType.getMethod("W").invoke(null) ?: return false
-        return libraryType.getMethod("isReady").invoke(library) == true && supported.invoke(null, item) == true
+        val library = api.library.invoke(null) ?: return false
+        return libraryType.getMethod("isReady").invoke(library) == true && api.supported.invoke(null, item) == true
     }
 
     fun toggle(item: Any, previous: Boolean): Boolean {
@@ -99,11 +114,9 @@ internal class AppleFavoriteSource(loader: ClassLoader) {
         if (ApplePlaybackSource.favorite(current) != previous) return false
         cancelQuery()
         val target = likeType.getField(if (previous) "None" else "Liked").get(null)
-        AppleFavoriteOperationHooks.track(current)
         try {
-            update.invoke(null, current, target, if (previous) 1 else 2, true)
+            api.update.invoke(null, current, target, if (previous) 1 else 2, true)
         } catch (error: Throwable) {
-            AppleFavoriteOperationHooks.forget(current)
             throw error
         }
         pendingChange = PendingChange(current, previous, SystemClock.elapsedRealtime())
@@ -116,7 +129,6 @@ internal class AppleFavoriteSource(loader: ClassLoader) {
         ApplePlaybackSource.favorite(item) == !pending.previous
 
     private fun confirm(item: Any, pending: PendingChange) {
-        AppleFavoriteOperationHooks.forget(pending.item)
         libraryItem = item
         pendingChange = null
         nextReadAtMs = SystemClock.elapsedRealtime() + STATE_REFRESH_MS
@@ -125,13 +137,13 @@ internal class AppleFavoriteSource(loader: ClassLoader) {
 
     private fun cancelQuery() {
         generation++
-        subscription?.let { runCatching { disposableType.getMethod("f").invoke(it) } }
+        dispose(subscription)
         subscription = null
         loading = false
     }
 
     fun release() {
-        pendingChange?.let { AppleFavoriteOperationHooks.forget(it.item) }
+        // Queued ownership deliveries must still run so stale native subscriptions are disposed.
         cancelQuery()
         identity = null
         libraryItem = null
@@ -139,9 +151,28 @@ internal class AppleFavoriteSource(loader: ClassLoader) {
         nextReadAtMs = 0L
     }
 
-    private companion object {
-        const val STATE_REFRESH_MS = 1_500L
-        const val CONFIRM_POLL_MS = 200L
-        const val CONFIRMATION_TIMEOUT_MS = 10_000L
+    private fun deliverOnMain(deliver: () -> Unit) {
+        val guarded = {
+            runCatching(deliver).onFailure { error ->
+                loading = false
+                moduleInfo("Apple Music favorite result delivery failed: ${error.cause ?: error}")
+            }
+            Unit
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) guarded() else main.post(guarded)
+    }
+
+    private fun dispose(disposable: Any?) {
+        disposable?.let { runCatching { api.dispose.invoke(it) }.onFailure { error ->
+            moduleInfo("Apple Music favorite subscription release failed: ${error.cause ?: error}")
+        } }
+    }
+
+    companion object {
+        val worker: Executor = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(16),
+            { task -> Thread(task, "MusicEnhance-AppleFavorite").apply { isDaemon = true } })
+        private const val STATE_REFRESH_MS = 1_500L
+        private const val CONFIRM_POLL_MS = 200L
+        private const val CONFIRMATION_TIMEOUT_MS = 10_000L
     }
 }

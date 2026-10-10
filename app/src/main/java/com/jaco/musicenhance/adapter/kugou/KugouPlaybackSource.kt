@@ -1,6 +1,7 @@
 package com.jaco.musicenhance.adapter.kugou
 
 import com.jaco.musicenhance.hook.moduleInfo
+import com.jaco.musicenhance.adapter.kugoucommon.KugouInterfaceFeatures
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -47,6 +48,7 @@ internal class KugouPlaybackSource(
         private val type = loader.loadClass("com.kugou.framework.service.IKugouPlaybackService")
         val seek = type.getMethod("seek", Int::class.javaPrimitiveType)
         val isPlaying = type.getMethod("isPlaying")
-        val play = type.getMethod("J", Int::class.javaPrimitiveType)
+        val play = KugouInterfaceFeatures.verified(loader, "kugou", "playback.play", type, "J", Void.TYPE,
+            Int::class.javaPrimitiveType!!)
     }
 }

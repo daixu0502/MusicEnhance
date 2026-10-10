@@ -1,6 +1,7 @@
 package com.jaco.musicenhance.adapter.kugou
 
 import com.jaco.musicenhance.player.model.LyricLine
+import com.jaco.musicenhance.adapter.kugoucommon.KugouLyricsRules
 import java.io.File
 
 /** 20.8.2 / 20.8.4 contract: native cache/downloader plus a separate KRC/LRC parser. */
@@ -8,34 +9,30 @@ internal class KugouLyricsApi(loader: ClassLoader) {
     data class Song(val identity: KugouSongSource.Song, val displayName: String,
         val mimeType: String, val fileId: Long, val durationMs: Long)
     private val songs = KugouSongSource(loader)
+    private val interfaces = KugouLyricsRules(loader, "kugou")
     private val songType = loader.loadClass("com.kugou.framework.service.entity.KGMusicWrapper")
     private val displayName = songType.getMethod("getDisplayName")
-    private val mime = songType.getMethod("z2")
-    private val fileId = songType.getMethod("O1")
-    private val duration = songType.getMethod("D1")
-    private val managerType = loader.loadClass("com.kugou.framework.lyric.LyricManager")
-    private val dataType = loader.loadClass("com.kugou.framework.lyric.LyricData")
-    private val downloadType = loader.loadClass("com.kugou.framework.lyric.g")
-    private val downloadConstructor = downloadType.constructors.single {
-        it.parameterCount == 2 && it.parameterTypes[1] == Boolean::class.javaPrimitiveType
-    }
-    private val requestType = downloadConstructor.parameterTypes[0]
-    private val searchType = loader.loadClass("com.kugou.framework.lyric.protocol.b")
-    private val audioKindType = loader.loadClass("com.kugou.common.entity.j")
+    private val mime get() = interfaces.wrapperMethod("mime", "z2", String::class.java)
+    private val fileId get() = interfaces.wrapperMethod("file-id", "O1", Long::class.javaPrimitiveType!!)
+    private val duration get() = interfaces.wrapperMethod("duration", "D1", Long::class.javaPrimitiveType!!)
+    private val downloadConstructor get() = interfaces.downloadConstructor
+    private val requestType get() = downloadConstructor.parameterTypes[0]
+    private val searchType get() = interfaces.searchType
 
     fun currentSong(): Song? {
         val native = songs.currentNative() ?: return null
         val identity = songs.read(native) ?: return null
         return Song(identity, displayName.invoke(native) as? String ?: identity.title,
-            mime.invoke(native) as? String ?: "", (fileId.invoke(native) as Number).toLong(),
-            (duration.invoke(native) as Number).toLong())
+            runCatching { mime.invoke(native) as? String }.getOrNull().orEmpty(),
+            runCatching { (fileId.invoke(native) as Number).toLong() }.getOrDefault(0L),
+            runCatching { (duration.invoke(native) as Number).toLong() }.getOrDefault(0L))
     }
     fun isCurrent(song: Song) = songs.current()?.key == song.identity.key
 
     fun currentLines(hash: String): List<LyricLine> {
-        val manager = managerType.getMethod("e").invoke(null) ?: return emptyList()
-        val data = managerType.getMethod("f").invoke(manager) ?: return emptyList()
-        val headers = dataType.getMethod("getHeaders").invoke(data) as? Map<*, *>
+        val manager = interfaces.activeManager.invoke(null) ?: return emptyList()
+        val data = interfaces.activeData.invoke(manager) ?: return emptyList()
+        val headers = interfaces.headers.invoke(data) as? Map<*, *>
         if (headers?.values?.none { it is String && it.equals(hash, ignoreCase = true) } != false) return emptyList()
         return lines(data)
     }
@@ -45,10 +42,11 @@ internal class KugouLyricsApi(loader: ClassLoader) {
         // Without a selected candidate the host reuses its local cache or searches automatically.
         download(song, null, active).takeIf { it.isNotEmpty() }?.let { return it }
         if (!active()) return emptyList()
-        val search = searchType.getConstructor(String::class.java, Long::class.javaPrimitiveType,
-            String::class.java, Long::class.javaPrimitiveType, audioKindType)
+        val search = searchType.constructors.single { it.parameterCount == 5 &&
+            it.parameterTypes.take(4) == listOf(String::class.java, Long::class.javaPrimitiveType,
+                String::class.java, Long::class.javaPrimitiveType) }
             .newInstance(song.displayName, 1L, song.identity.hash, song.identity.mixId, null)
-        val candidates = searchType.getMethod("y", Boolean::class.javaPrimitiveType).invoke(search, false) as? List<*>
+        val candidates = interfaces.search.invoke(search, false) as? List<*>
         // A cached TXT or a candidate without timestamps must not suppress the timed-lyric fallback.
         for (candidate in candidates.orEmpty().filterNotNull().take(MAX_CANDIDATES)) {
             if (!active()) return emptyList()
@@ -60,8 +58,10 @@ internal class KugouLyricsApi(loader: ClassLoader) {
     private fun download(song: Song, candidate: Any?, active: () -> Boolean): List<LyricLine> {
         if (!active()) return emptyList()
         val request = requestType.getConstructor().newInstance()
-        fun text(method: String, value: String) { requestType.getMethod(method, String::class.java).invoke(request, value) }
-        fun number(method: String, value: Long) { requestType.getMethod(method, Long::class.javaPrimitiveType).invoke(request, value) }
+        fun text(method: String, value: String) { interfaces.requestMethod(requestType, method, method,
+            Void.TYPE, String::class.java).invoke(request, value) }
+        fun number(method: String, value: Long) { interfaces.requestMethod(requestType, method, method,
+            Void.TYPE, Long::class.javaPrimitiveType!!).invoke(request, value) }
         text("U", song.displayName)
         text("Y", song.identity.hash)
         text("g0", song.identity.hash)
@@ -69,30 +69,33 @@ internal class KugouLyricsApi(loader: ClassLoader) {
         number("P", song.fileId)
         number("T", song.durationMs)
         number("d0", song.identity.mixId)
-        requestType.getMethod("m0", Boolean::class.javaPrimitiveType).invoke(request, true)
+        interfaces.requestMethod(requestType, "allow-cache", "m0", Void.TYPE, Boolean::class.javaPrimitiveType!!).invoke(request, true)
         if (candidate != null) {
-            fun value(method: String) = candidate.javaClass.getMethod(method).invoke(candidate)
+            fun value(method: String): Any? {
+                val resultType = when (method) { "d", "l" -> Int::class.javaPrimitiveType!!; "o" -> Any::class.java; else -> String::class.java }
+                return interfaces.candidateMethod(candidate.javaClass, method, method, resultType).invoke(candidate)
+            }
             text("K", value("c") as? String ?: "") // singer
             text("l0", value("m") as? String ?: "") // title
             text("k0", value("o")?.toString().orEmpty()) // uploader ID
             text("a0", value("i") as? String ?: "") // lyric ID
             text("H", value("b") as? String ?: "") // access key
-            requestType.getMethod("b0", Int::class.javaPrimitiveType).invoke(request, value("d"))
-            requestType.getMethod("e0", Int::class.javaPrimitiveType).invoke(request, value("l"))
+            interfaces.requestMethod(requestType, "content-type", "b0", Void.TYPE, Int::class.javaPrimitiveType!!).invoke(request, value("d"))
+            interfaces.requestMethod(requestType, "adjust", "e0", Void.TYPE, Int::class.javaPrimitiveType!!).invoke(request, value("l"))
         }
         val downloader = downloadConstructor.newInstance(request, candidate != null)
-        downloadType.getMethod("G").invoke(downloader)
+        interfaces.download.invoke(downloader)
         if (!active()) return emptyList()
-        val path = downloadType.getMethod("f").invoke(downloader) as? String
+        val path = interfaces.downloadedPath.invoke(downloader) as? String
         if (path.isNullOrBlank() || !File(path).isFile) return emptyList()
-        val parser = managerType.getMethod("n").invoke(null)
-        val result = managerType.getMethod("l", String::class.java, Boolean::class.javaPrimitiveType).invoke(parser, path, false)
-        val data = result?.javaClass?.getField("e")?.get(result) ?: return emptyList()
+        val parser = interfaces.independentParser.invoke(null)
+        val result = interfaces.parseFile.invoke(parser, path, false)
+        val data = result?.let { interfaces.resultData(it.javaClass).get(it) } ?: return emptyList()
         return if (active()) lines(data) else emptyList()
     }
 
-    private fun lines(data: Any) = decodeLines(dataType.getMethod("getRowBeginTime").invoke(data) as? LongArray,
-        dataType.getMethod("getWords").invoke(data) as? Array<*>)
+    private fun lines(data: Any) = decodeLines(interfaces.rowStarts.invoke(data) as? LongArray,
+        interfaces.words.invoke(data) as? Array<*>)
 
     companion object {
         private const val MAX_CANDIDATES = 3

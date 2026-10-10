@@ -65,19 +65,21 @@ internal class SpotifyLyricsProvider(private val loader: ClassLoader) : LyricsPr
 
     private fun load(service: Any, trackUri: String): LyricsSnapshot {
         val singleType = loader.loadClass("io.reactivex.rxjava3.core.Single")
-        val single = service.javaClass.getMethod("b", String::class.java, String::class.java)
+        val single = SpotifyInterfaceRules.loadLyrics(loader, service.javaClass)
             .invoke(service, trackUri, null)
         val bounded = singleType.getMethod("timeout", Long::class.javaPrimitiveType, TimeUnit::class.java)
             .invoke(single, 12L, TimeUnit.SECONDS)
         val response = singleType.getMethod("blockingGet").invoke(bounded)
-        val lyrics = loader.loadClass("p.j6g").getField("a").get(response)
-        val lyricsType = loader.loadClass("p.x9d0")
-        val syncType = lyricsType.getField("b").getInt(lyrics)
-        val lineType = loader.loadClass("p.r9d0")
-        val start = lineType.getField("a")
-        val words = lineType.getField("b")
-        val lines = (lyricsType.getField("a").get(lyrics) as? List<*>).orEmpty().mapNotNull {
-            if (it == null) null else LyricLine(start.getLong(it), words.get(it) as String)
+        requireNotNull(response) { "Spotify lyric response is empty" }
+        val lyrics = SpotifyInterfaceRules.responseLyrics(loader, response.javaClass).get(response)
+            ?: return LyricsSnapshot(trackUri, LyricsStatus.UNAVAILABLE)
+        val syncType = SpotifyInterfaceRules.lyricSync(loader, lyrics.javaClass).getInt(lyrics)
+        val rows = (SpotifyInterfaceRules.lyricRows(loader, lyrics.javaClass).get(lyrics) as? List<*>).orEmpty()
+        val lines = rows.take(2_000).mapNotNull { row ->
+            if (row == null) null else LyricLine(
+                SpotifyInterfaceRules.rowStart(loader, row.javaClass).getLong(row),
+                SpotifyInterfaceRules.rowWords(loader, row.javaClass).get(row) as String,
+            )
         }
         return parse(trackUri, syncType, lines)
     }

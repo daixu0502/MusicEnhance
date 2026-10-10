@@ -3,6 +3,7 @@ package com.jaco.musicenhance.adapter.kugoulite
 import android.app.Activity
 import android.view.View
 import com.jaco.musicenhance.adapter.NativePlayerPage
+import com.jaco.musicenhance.adapter.discovery.HostInterfaces
 import com.jaco.musicenhance.device.CoverScreenDetector
 import com.jaco.musicenhance.hook.hookEnabled
 import com.jaco.musicenhance.hook.module
@@ -18,6 +19,7 @@ import java.util.WeakHashMap
 internal object KugouLitePlayerHooks {
     private const val FRAGMENT_NAME = "com.kugou.android.app.player.YoungPlayerFragment"
     private var ready = false
+    private val installed = mutableSetOf<Method>()
 
     private var home = WeakReference<Activity>(null)
     fun homeActivity() = home.get()?.takeUnless { it.isFinishing || it.isDestroyed }
@@ -29,10 +31,7 @@ internal object KugouLitePlayerHooks {
         val delegate = loader.loadClass("com.kugou.common.base.ViewPagerFrameworkDelegate")
         val fragment = loader.loadClass(FRAGMENT_NAME)
         val getActivity = delegate.getMethod("getActivity")
-        val navigation = delegate.declaredMethods.single {
-            it.name == "Q1" && it.parameterCount == 8 && it.parameterTypes[1] == Class::class.java &&
-                it.parameterTypes.last() == Runnable::class.java && it.returnType == Void.TYPE
-        }
+        val navigation = KugouLiteInterfaceRules.navigation(loader)
         hook(navigation, "navigate") { chain ->
             val destination = chain.args[1] as? Class<*>
             var redirected = false
@@ -56,18 +55,22 @@ internal object KugouLitePlayerHooks {
                 null
             } else chain.proceed()
         }
-        installRestoredFragmentRoute(fragment)
         ready = true
+        safeHook("Kugou Lite restored player route") { installRestoredFragmentRoute(fragment, loader) }
         moduleInfo("Kugou Lite independent player route installed")
     }
 
     /** Restored pages and an inner-screen player folded onto the cover may bypass navigation. */
-    private fun installRestoredFragmentRoute(fragment: Class<*>) {
+    private fun installRestoredFragmentRoute(fragment: Class<*>, loader: ClassLoader) {
         val pendingTransfers = WeakHashMap<Any, Boolean>()
         val getActivity = fragment.getMethod("getActivity")
         val getView = fragment.getMethod("getView")
         val finish = fragment.getMethod("finish")
-        val isVisible = fragment.getDeclaredMethod("Vd").apply { isAccessible = true }
+        val isVisible = HostInterfaces.method(loader, "kugoulite.navigation.restored-visible.v1",
+            { fragment.getDeclaredMethod("Vd") },
+            { it.parameterCount == 0 && it.returnType == Boolean::class.javaPrimitiveType },
+            discover = { emptyList() },
+        ).apply { isAccessible = true }
         val callbacks = fragment.declaredMethods.filter {
             it.name in setOf("onResume", "onFragmentResume", "onConfigurationChanged")
         }
@@ -116,7 +119,9 @@ internal object KugouLitePlayerHooks {
         CoverScreenDetector.isCoverScreen(activity)
 
     private fun hook(method: Method, suffix: String, callback: Hooker) {
+        if (method in installed) return
         method.isAccessible = true
         module.installHook(method, "musicenhance.kugoulite.activity.$suffix", callback)
+        installed += method
     }
 }

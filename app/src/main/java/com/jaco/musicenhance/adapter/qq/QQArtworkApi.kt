@@ -5,21 +5,20 @@ import com.jaco.musicenhance.player.model.RepeatMode
 import com.jaco.musicenhance.adapter.qq.QQArtworkSource.Song
 
 /** QQ 20.8.5.8 / 20.9.0.8 private song and artwork URL methods; no network or UI state. */
-internal class QQArtworkApi(classLoader: ClassLoader) : QQArtworkSource {
+internal class QQArtworkApi(private val classLoader: ClassLoader) : QQArtworkSource {
     private val songClass = Class.forName("com.tencent.qqmusicplayerprocess.songinfo.SongInfo", false, classLoader)
     private val process = QQPlayProcessApi(classLoader)
     private val getPlayEnvironment = process.getEnvironment
     private val playMethods = process.type
     private val getPlaySong = playMethods.getMethod("getPlaySong")
-    private val songTitle = songClass.getMethod("j3")
-    private val songId = songClass.getMethod("C3")
-    private val urlBuilder = Class.forName("com.tencent.qqmusiccommon.appconfig.albumpic.b", false, classLoader)
-    private val coverUrl = urlBuilder.getMethod("e", songClass, Int::class.javaPrimitiveType)
-    private val sizedCoverUrl = runCatching {
-        urlBuilder.getMethod("f", songClass, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+    private val songTitle = QQInterfaceRules.songTitle(classLoader, songClass)
+    private val songId = QQInterfaceRules.songId(classLoader, songClass)
+    private val coverUrl = QQInterfaceRules.artwork(classLoader, songClass, "e", 2)
+    private val sizedCoverUrl get() = runCatching {
+        QQInterfaceRules.artwork(classLoader, songClass, "f", 3)
     }.getOrNull()
-    private val singerCoverUrl = runCatching {
-        urlBuilder.getMethod("o", songClass, Int::class.javaPrimitiveType)
+    private val singerCoverUrl get() = runCatching {
+        QQInterfaceRules.artwork(classLoader, songClass, "o", 2)
     }.getOrNull()
 
     // Optional: a missing queue API must not disable current-song artwork on another QQ version.

@@ -76,15 +76,15 @@ internal class QQPlaybackSource(
         private val getSong = environmentType.getMethod("getPlaySong")
         private val getState = environmentType.getMethod("getPlayState")
         private val songType = loader.loadClass("com.tencent.qqmusicplayerprocess.songinfo.SongInfo")
-        private val getSongId = songType.getMethod("C3")
-        private val getSongTitle = songType.getMethod("j3")
-        private val controlsType = loader.loadClass("com.tencent.qqmusic.common.player.g")
+        private val getSongId = QQInterfaceRules.songId(loader, songType)
+        private val getSongTitle = QQInterfaceRules.songTitle(loader, songType)
+        private val controlsType = QQInterfaceRules.controlsType(loader)
         private val controls = controlsType.declaredFields.single {
             Modifier.isStatic(it.modifiers) && it.type == controlsType
         }.apply { isAccessible = true }.get(null)
-        private val seek = controlsType.getMethod("s", Long::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-        private val resume = controlsType.getMethod("r", Int::class.javaPrimitiveType)
-        private val start = controlsType.getMethod("o", Int::class.javaPrimitiveType)
+        private val seek = QQInterfaceRules.playback(loader, controlsType, "seek")
+        private val resume = QQInterfaceRules.playback(loader, controlsType, "resume")
+        private val start = QQInterfaceRules.playback(loader, controlsType, "start")
         private val fromType = loader.loadClass("com.tencent.qqmusicplayerprocess.servicenew.FromInfo")
         private val lyricSource = fromType.getField("value").getInt(fromType.getField("FROM_LYRIC").get(null))
 

@@ -7,16 +7,22 @@ import com.jaco.musicenhance.hook.safeHook
 import com.jaco.musicenhance.player.model.LyricsSnapshot
 import com.jaco.musicenhance.player.model.LyricsStatus
 import com.jaco.musicenhance.player.model.PlayerSnapshot
+import com.jaco.musicenhance.adapter.kugoucommon.KugouLyricsRules
+import java.lang.reflect.Method
 
 internal object KugouLiteLyricsSource {
     private val sources = KugouLiteLyricsStore()
+    private val installed = mutableSetOf<Method>()
 
     fun install(loader: ClassLoader) {
+        val interfaces = KugouLyricsRules(loader, "kugoulite")
         safeHook("Kugou Lite lyric download identity") {
-            val type = loader.loadClass("com.kugou.framework.lyric.i")
-            val getHash = type.getMethod("e")
-            val getPath = type.getMethod("d")
-            module.installHook(type.getMethod("v"), "musicenhance.kugoulite.lyric.download") { chain ->
+            val type = interfaces.downloader
+            val getHash = KugouLiteApi(loader).verified("lyrics.download-hash", type, "e", String::class.java)
+            val getPath = interfaces.downloadedPath
+            val download = interfaces.download
+            if (download in installed) return@safeHook
+            module.installHook(download, "musicenhance.kugoulite.lyric.download") { chain ->
                 val hash = runCatching { getHash.invoke(chain.thisObject) as? String }.getOrNull()
                 val result = chain.proceed()
                 safeHook("Kugou Lite lyric download result") {
@@ -25,17 +31,19 @@ internal object KugouLiteLyricsSource {
                 }
                 result
             }
+            installed += download
         }
         safeHook("Kugou Lite lyric source") {
-            val type = loader.loadClass("com.kugou.framework.lyric.LyricManager")
-            val load = type.getMethod("k", String::class.java, Boolean::class.javaPrimitiveType)
+            val load = interfaces.parseFile
+            if (load in installed) return@safeHook
             module.installHook(load, "musicenhance.kugoulite.lyric.path") { chain ->
                 val result = chain.proceed()
                 safeHook("Kugou Lite lyric identity") {
-                    sources.parsed(chain.args[0] as? String, result?.javaClass?.getField("e")?.get(result))
+                    sources.parsed(chain.args[0] as? String, result?.let { interfaces.resultData(it.javaClass).get(it) })
                 }
                 result
             }
+            installed += load
         }
     }
 

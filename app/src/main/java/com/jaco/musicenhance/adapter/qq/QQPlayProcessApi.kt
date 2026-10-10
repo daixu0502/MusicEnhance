@@ -5,7 +5,7 @@ import java.lang.reflect.Modifier
 
 /** Shared IPC entry point for QQ 20.8.5.8 and 20.9.0.8 (verified from both APKs). */
 internal class QQPlayProcessApi(loader: ClassLoader) {
-    val getEnvironment: Method = resolveFactory(loader)
+    val getEnvironment: Method = QQInterfaceRules.environment(loader) { resolveFactory(loader) }
     // Derive the interface from the verified factory: QQ 20.9 renamed the interface too.
     val type: Class<*> = getEnvironment.returnType
 

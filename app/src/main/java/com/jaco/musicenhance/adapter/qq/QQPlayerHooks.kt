@@ -2,20 +2,23 @@ package com.jaco.musicenhance.adapter.qq
 
 import android.app.Activity
 import android.app.Instrumentation
-import android.os.Bundle
 import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.hook.safeHook
 import com.jaco.musicenhance.player.EnhancedPlayerActivity
 import com.jaco.musicenhance.player.PlayerActivitySessions
 import java.lang.reflect.Modifier
+import java.lang.reflect.Method
 
 /** QQ 20.8.5.8 / 20.9.0.8 normally complete player navigation in BasePlayerActivity.onResume. */
 internal object QQPlayerHooks {
+    private val installed = mutableSetOf<Method>()
     fun install(loader: ClassLoader) = safeHook("QQ player navigation completion") {
         val api = Api(loader)
+        val resume = Instrumentation::class.java.getDeclaredMethod("callActivityOnResume", Activity::class.java)
+        if (resume in installed) return@safeHook
         module.installHook(
-            Instrumentation::class.java.getDeclaredMethod("callActivityOnResume", Activity::class.java),
+            resume,
             "musicenhance.qq.player.ready",
         ) { chain ->
             val result = chain.proceed()
@@ -35,22 +38,17 @@ internal object QQPlayerHooks {
             }
             result
         }
+        installed.add(resume)
         moduleInfo("QQ player navigation completion installed")
     }
 
     private class Api(loader: ClassLoader) {
-        private val operations = loader.loadClass("com.tencent.qqmusic.business.playercommon.a")
-        private val complete = operations.getDeclaredMethod("j")
-        private val pending = operations.getDeclaredMethod("k")
+        private val jump = QQInterfaceRules.navigationJump(loader)
+        private val operations = jump.declaringClass
+        private val complete = QQInterfaceRules.navigationCompletion(loader, operations)
+        private val pending = QQInterfaceRules.navigationPending(loader, operations)
 
         init {
-            val style = loader.loadClass("com.tencent.qqmusic.business.playernew.interactor.playerstyle.PlayerStyle")
-            val jump = operations.getDeclaredMethod(
-                "i", Activity::class.java, Boolean::class.javaPrimitiveType,
-                Boolean::class.javaPrimitiveType, Boolean::class.javaPrimitiveType, style,
-                Int::class.javaPrimitiveType, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType,
-                Boolean::class.javaPrimitiveType, Bundle::class.java,
-            )
             require(Modifier.isStatic(jump.modifiers) && jump.returnType == Boolean::class.javaPrimitiveType &&
                 Modifier.isStatic(complete.modifiers) && complete.returnType == Void.TYPE &&
                 Modifier.isStatic(pending.modifiers) && pending.returnType == Boolean::class.javaPrimitiveType) {

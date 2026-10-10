@@ -11,24 +11,23 @@ internal class KugouLiteFavoriteSource(
     private val loader: ClassLoader,
     private val hostActivity: () -> Activity?,
 ) : PolledFavoriteControl.Source {
-    private val service = loader.loadClass("com.kugou.framework.service.util.PlaybackServiceUtil")
+    private val api = KugouLiteApi(loader)
     private val songType = loader.loadClass("com.kugou.framework.service.entity.KGMusicWrapper")
-    private val current = service.getMethod("s0")
+    private val current = api.currentSong
     private val hash = songType.getMethod("getHashValue")
     private val mixId = songType.getMethod("getMixId")
     private val title = songType.getMethod("getTrackName")
     private val artist = songType.getMethod("getArtistName")
-    private val favorite = loader.loadClass("com.kugou.common.utils.MyFavUtils")
-        .getMethod("O", String::class.java, Long::class.javaPrimitiveType)
-    private val songInterface = loader.loadClass("com.kugou.android.common.entity.ISong")
-    private val songKinds = loader.loadClass("ra0.b")
-    private val isAiSong = songKinds.getMethod("j", songInterface)
-    private val isAiTimbre = songKinds.getMethod("o", songInterface)
+    private val favorite = KugouLiteInterfaceRules.favoriteQuery(loader)
+    private val isAiSong = KugouLiteInterfaceRules.aiCheck(loader, timbre = false)
+    private val isAiTimbre = KugouLiteInterfaceRules.aiCheck(loader, timbre = true)
     private val providerType = loader.loadClass("com.kugou.android.app.player.subview.base.IProvider")
-    private val delegateType = loader.loadClass("com.kugou.android.app.player.song.delegate.SongFavDelegate")
+    private val toggleFavorite = KugouLiteInterfaceRules.favoriteToggle(loader)
+    private val delegateType = toggleFavorite.declaringClass
     private val createDelegate = delegateType.getConstructor(providerType)
-    private val toggleFavorite = delegateType.getMethod("u", Boolean::class.javaPrimitiveType)
-    private val releaseDelegate = delegateType.getMethod("v")
+    private val releaseDelegate = KugouLiteInterfaceRules.favoriteRelease(loader)
+    private val providerCurrent = KugouLiteInterfaceRules.providerCurrent(loader, providerType)
+    private val providerContribution = KugouLiteInterfaceRules.providerContribution(loader, providerType)
 
     private data class Song(val key: String, val hash: String, val mixId: Long, val title: String, val artist: String)
 
@@ -62,15 +61,15 @@ internal class KugouLiteFavoriteSource(
         // 5.2.9 u()->M()/t() only needs the live home Activity, current track and optional
         // contribution metadata. No native player, LandPlayerPage or ILandProvider is constructed.
         val provider = Proxy.newProxyInstance(loader, arrayOf(providerType)) { proxy, method, args ->
-            when (method.name) {
-                "getActivity" -> hostActivity()?.takeIf(activityType::isInstance)
+            when {
+                method.name == "getActivity" -> hostActivity()?.takeIf(activityType::isInstance)
                     ?: error("Kugou Lite home Activity unavailable")
-                "getContext" -> activity.applicationContext
-                "j0" -> current.invoke(null)
-                "l0" -> null // Nullable ContributionEntity, absent outside the native contribution UI.
-                "hashCode" -> System.identityHashCode(proxy)
-                "equals" -> proxy === args?.firstOrNull()
-                "toString" -> "MusicEnhanceFavoriteProvider"
+                method.name == "getContext" -> activity.applicationContext
+                method == providerCurrent -> current.invoke(null)
+                method == providerContribution -> null // Nullable outside the native contribution UI.
+                method.name == "hashCode" -> System.identityHashCode(proxy)
+                method.name == "equals" -> proxy === args?.firstOrNull()
+                method.name == "toString" -> "MusicEnhanceFavoriteProvider"
                 else -> error("Unsupported Kugou Lite favorite provider call: ${method.name}")
             }
         }

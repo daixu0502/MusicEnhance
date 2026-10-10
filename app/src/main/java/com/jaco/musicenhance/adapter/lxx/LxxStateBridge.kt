@@ -6,11 +6,14 @@ import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.hook.safeHook
 import com.jaco.musicenhance.player.model.LyricLine
+import com.jaco.musicenhance.adapter.discovery.HostInterfaces
 import org.json.JSONObject
 import java.io.File
 import java.lang.ref.WeakReference
+import java.lang.reflect.Executable
 import java.util.Collections
 import java.util.WeakHashMap
+import io.github.libxposed.api.XposedInterface
 
 /** RN's song event includes the real music ID even before TrackPlayer finishes replacing its queue. */
 internal object LxxStateBridge {
@@ -26,6 +29,7 @@ internal object LxxStateBridge {
     @Volatile private var scriptFile: File? = null
     private val runtimes = Collections.newSetFromMap(WeakHashMap<Any, Boolean>())
     private var currentModule = WeakReference<Any>(null)
+    private val installed = mutableSetOf<Executable>()
     private const val MARKER = "MusicEnhance.Lxx.State.v1"
 
     fun prepare(application: Application) {
@@ -40,11 +44,15 @@ internal object LxxStateBridge {
     fun install(loader: ClassLoader) = safeHook("LX-X song state bridge") {
         val catalyst = loader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")
         val loadFile = catalyst.getMethod("loadScriptFromFile", String::class.java, String::class.java, Boolean::class.javaPrimitiveType)
-        val lyricType = loader.loadClass("com.lxwalnut.music.mobile.lyric.LyricModule")
+        val lyricType = HostInterfaces.type(loader, "lxx.lyrics.module.v1", known = { loader.loadClass("com.lxwalnut.music.mobile.lyric.LyricModule") },
+            validate = { type -> type.methods.any { it.name == "setLyric" && it.parameterCount == 5 } }) {
+            methods { matcher { name = "getName"; returnType = "java.lang.String"; paramCount = 0; usingEqStrings("LyricModule") } }
+                .map { it.getMethodInstance(loader).declaringClass }
+        }
         val promiseType = loader.loadClass("com.facebook.react.bridge.Promise")
         val resolve = promiseType.getMethod("resolve", Any::class.java)
         val setLyric = lyricType.getMethod("setLyric", String::class.java, String::class.java, String::class.java, String::class.java, promiseType)
-        module.installHook(setLyric, "musicenhance.lxx.state.receive") { chain ->
+        hook(setLyric, "musicenhance.lxx.state.receive") { chain ->
             val marker = chain.args[0]
             if (marker != MARKER && marker != LxxControlSource.MARKER) chain.proceed() else {
                 safeHook("LX-X host song snapshot") {
@@ -58,7 +66,7 @@ internal object LxxStateBridge {
                 null
             }
         }
-        module.installHook(catalyst.getMethod("loadScriptFromAssets", AssetManager::class.java, String::class.java, Boolean::class.javaPrimitiveType),
+        hook(catalyst.getMethod("loadScriptFromAssets", AssetManager::class.java, String::class.java, Boolean::class.javaPrimitiveType),
             "musicenhance.lxx.state.bootstrap") { chain ->
             val runtime = chain.thisObject
             val file = scriptFile
@@ -74,7 +82,7 @@ internal object LxxStateBridge {
         }
         // Release state when this React module dies; stale module destruction cannot clear a newer one.
         val base = loader.loadClass("com.facebook.react.bridge.BaseJavaModule")
-        module.installHook(base.getMethod("onCatalystInstanceDestroy"), "musicenhance.lxx.state.destroy") { chain ->
+        hook(base.getMethod("onCatalystInstanceDestroy"), "musicenhance.lxx.state.destroy") { chain ->
             synchronized(this) {
                 LxxControlSource.onModuleDestroyed(chain.thisObject)
                 if (currentModule.get() === chain.thisObject) { currentModule.clear(); state = Song() }
@@ -82,6 +90,12 @@ internal object LxxStateBridge {
             chain.proceed()
         }
         moduleInfo("LX-X host-only song/lyric bridge installed (26.09.20)")
+    }
+
+    @Synchronized private fun hook(executable: Executable, id: String, hooker: XposedInterface.Hooker) {
+        if (executable in installed) return
+        module.installHook(executable, id, hooker)
+        installed.add(executable)
     }
 
     internal fun decode(payload: String, previous: Song = Song()): Song {

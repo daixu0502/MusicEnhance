@@ -14,8 +14,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -36,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
@@ -51,9 +50,14 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,7 +65,8 @@ import androidx.core.content.edit
 import com.jaco.musicenhance.adapter.MusicAppProfile
 import com.jaco.musicenhance.adapter.MusicAppRegistry
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.NavigationBar
+import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
@@ -122,9 +127,9 @@ private fun MainScreen(
 ) {
     val context = LocalContext.current
     val connected = XposedServiceState.isConnected
-    var showMusicAppHooks by rememberSaveable { mutableStateOf(false) }
+    var selectedPage by rememberSaveable { mutableIntStateOf(0) }
 
-    BackHandler(enabled = showMusicAppHooks) { showMusicAppHooks = false }
+    BackHandler(enabled = selectedPage != 0) { selectedPage = 0 }
 
     DisposableEffect(Unit) {
         context.deleteSharedPreferences(Prefs.NAME)
@@ -132,36 +137,14 @@ private fun MainScreen(
         onDispose { }
     }
 
-    AnimatedContent(
-        targetState = showMusicAppHooks,
-        modifier = Modifier.fillMaxSize(),
-        transitionSpec = {
-            val enter = if (targetState) {
-                slideInHorizontally(tween(SETTINGS_TRANSITION_DURATION_MS)) { it }
-            } else {
-                slideInHorizontally(tween(SETTINGS_TRANSITION_DURATION_MS)) { -it / 4 }
-            } + fadeIn(tween(SETTINGS_TRANSITION_DURATION_MS))
-            val exit = if (targetState) {
-                slideOutHorizontally(tween(SETTINGS_TRANSITION_DURATION_MS)) { -it / 4 }
-            } else {
-                slideOutHorizontally(tween(SETTINGS_TRANSITION_DURATION_MS)) { it }
-            } + fadeOut(tween(SETTINGS_TRANSITION_DURATION_MS))
-            enter togetherWith exit
-        },
-        label = "settings-page",
-    ) { hooksVisible ->
-        if (hooksVisible) {
-            MusicAppHookScreen(onBack = { showMusicAppHooks = false })
-        } else {
-            MainSettingsScreen(
-                connected = connected,
-                deviceName = deviceName,
-                installedPackages = installedPackages,
-                onOpenMusicAppHooks = { showMusicAppHooks = true },
-                onOpenLSPosed = onOpenLSPosed,
-            )
-        }
-    }
+    MainSettingsScreen(
+        connected = connected,
+        deviceName = deviceName,
+        installedPackages = installedPackages,
+        selectedPage = selectedPage,
+        onSelectPage = { selectedPage = it },
+        onOpenLSPosed = onOpenLSPosed,
+    )
 }
 
 @Composable
@@ -169,53 +152,85 @@ private fun MainSettingsScreen(
     connected: Boolean,
     deviceName: String?,
     installedPackages: Set<String>,
-    onOpenMusicAppHooks: () -> Unit,
+    selectedPage: Int,
+    onSelectPage: (Int) -> Unit,
     onOpenLSPosed: () -> Unit,
 ) {
     val scrollBehavior = MiuixScrollBehavior()
-    val listState = rememberLazyListState()
+    val listStates = MainPage.entries.map { rememberLazyListState() }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = stringResource(R.string.app_name),
+                title = if (selectedPage == 0) stringResource(R.string.app_name) else MainPage.entries[selectedPage].title,
                 scrollBehavior = scrollBehavior,
             )
         },
+        bottomBar = {
+            NavigationBar {
+                MainPage.entries.forEachIndexed { index, page ->
+                    NavigationBarItem(
+                        selected = selectedPage == index,
+                        onClick = { onSelectPage(index) },
+                        icon = page.icon,
+                        label = page.title,
+                        modifier = Modifier.clearAndSetSemantics {
+                            contentDescription = page.title
+                            role = Role.Tab
+                            selected = selectedPage == index
+                            onClick(label = "切换到${page.title}") { onSelectPage(index); true }
+                        },
+                    )
+                }
+            }
+        },
     ) { padding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxHeight().scrollEndHaptic().overScrollVertical()
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
-            contentPadding = padding,
-        ) {
-            item {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    ActivationCard(connected)
-
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        ArrowPreference(
-                            title = "音乐应用 Hook",
-                            summary = if (connected) "分别管理各音乐播放器；修改后需重启对应音乐应用"
-                                else "请先在 LSPosed 中启用模块",
-                            onClick = onOpenMusicAppHooks,
-                        )
+        AnimatedContent(
+            targetState = selectedPage,
+            transitionSpec = {
+                fadeIn(tween(SETTINGS_TRANSITION_DURATION_MS)) togetherWith
+                    fadeOut(tween(SETTINGS_TRANSITION_DURATION_MS))
+            },
+            label = "main-page",
+        ) { page ->
+            LazyColumn(
+                state = listStates[page],
+                modifier = Modifier.fillMaxHeight().scrollEndHaptic().overScrollVertical()
+                    .nestedScroll(scrollBehavior.nestedScrollConnection),
+                contentPadding = padding,
+            ) {
+                item {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        when (MainPage.entries[page]) {
+                            MainPage.INFO -> {
+                                ActivationCard(connected)
+                                Card(modifier = Modifier.fillMaxWidth()) {
+                                    ArrowPreference(
+                                        title = "LSPosed 作用域",
+                                        summary = "API 102 · 系统框架 · 系统界面 · 各音乐应用",
+                                        onClick = onOpenLSPosed,
+                                    )
+                                }
+                                DeviceCard(deviceName, installedPackages)
+                            }
+                            MainPage.FUNCTIONS -> {
+                                Text(
+                                    "音乐应用",
+                                    modifier = Modifier.padding(horizontal = 4.dp),
+                                    color = colorScheme.onSurfaceVariantSummary,
+                                    fontSize = 14.sp,
+                                )
+                                Card(modifier = Modifier.fillMaxWidth()) {
+                                    Column { MusicAppRegistry.profiles.forEach { MusicAppPreference(it) } }
+                                }
+                                PlayerPreferences()
+                            }
+                            MainPage.ABOUT -> AboutCards()
+                        }
                     }
-
-                    PlayerPreferences()
-
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        ArrowPreference(
-                            title = "LSPosed 作用域",
-                            summary = "API 102 · 系统框架 · 系统桌面 · 各音乐APP",
-                            onClick = onOpenLSPosed,
-                        )
-                    }
-
-                    DeviceCard(deviceName, installedPackages)
                 }
             }
         }
@@ -223,49 +238,24 @@ private fun MainSettingsScreen(
 }
 
 @Composable
-private fun MusicAppHookScreen(onBack: () -> Unit) {
-    val scrollBehavior = MiuixScrollBehavior()
-    val listState = rememberLazyListState()
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = "音乐应用 Hook",
-                navigationIcon = { BackNavigationButton(onBack) },
-                scrollBehavior = scrollBehavior,
-            )
-        },
-    ) { padding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxHeight().scrollEndHaptic().overScrollVertical()
-                .nestedScroll(scrollBehavior.nestedScrollConnection),
-            contentPadding = padding,
-        ) {
-            item {
-                Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        MusicAppRegistry.profiles.forEach { profile -> MusicAppPreference(profile) }
-                    }
-                }
-            }
+private fun AboutCards() {
+    val uriHandler = LocalUriHandler.current
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(stringResource(R.string.app_name), fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.app_version, BuildConfig.VERSION_NAME), color = colorScheme.onSurfaceVariantSummary)
+            Text("为 Xiaomi MIX Flip 系列打造的音乐外屏播放器", color = colorScheme.onSurfaceVariantSummary)
         }
     }
-}
-
-@Composable
-private fun BackNavigationButton(onClick: () -> Unit) {
-    val color = colorScheme.onSurface
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier.semantics { contentDescription = "返回" },
-    ) {
-        Canvas(modifier = Modifier.size(24.dp)) {
-            val strokeWidth = 2.dp.toPx()
-            drawLine(color, Offset(size.width * 0.75f, size.height * 0.18f),
-                Offset(size.width * 0.33f, size.height * 0.50f), strokeWidth, StrokeCap.Round)
-            drawLine(color, Offset(size.width * 0.33f, size.height * 0.50f),
-                Offset(size.width * 0.75f, size.height * 0.82f), strokeWidth, StrokeCap.Round)
-        }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        ArrowPreference(title = "GitHub 项目", summary = "MusicEnhance",
+            onClick = { uriHandler.openUri(PROJECT_URL) })
+        ArrowPreference(title = "作者", summary = "Jaco",
+            onClick = { uriHandler.openUri(AUTHOR_URL) })
+        ArrowPreference(title = "反馈问题", summary = "提交日志、应用版本与复现步骤",
+            onClick = { uriHandler.openUri("$PROJECT_URL/issues") })
+        ArrowPreference(title = "第三方开源组件", summary = "依赖来源与授权说明",
+            onClick = { uriHandler.openUri("$PROJECT_URL/blob/main/THIRD_PARTY_NOTICES.md") })
     }
 }
 
@@ -407,3 +397,14 @@ private fun DeviceCard(deviceName: String?, installedPackages: Set<String>) {
 }
 
 private const val SETTINGS_TRANSITION_DURATION_MS = 320
+private const val PROJECT_URL = "https://github.com/daixu0502/MusicEnhance"
+private const val AUTHOR_URL = "https://github.com/daixu0502"
+
+private enum class MainPage(val title: String) {
+    INFO("信息"), FUNCTIONS("功能"), ABOUT("关于");
+    val icon get() = when (this) {
+        INFO -> MainNavigationIcons.information
+        FUNCTIONS -> MainNavigationIcons.functions
+        ABOUT -> MainNavigationIcons.about
+    }
+}
