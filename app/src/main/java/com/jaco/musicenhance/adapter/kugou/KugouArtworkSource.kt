@@ -11,15 +11,15 @@ import java.util.concurrent.TimeUnit
 internal class KugouArtworkSource(loader: ClassLoader) : PlaylistArtworkSource<KugouArtworkSource.Song> {
     data class Song(val identity: KugouSongSource.Song, val avatarHash: String, val addresses: List<String>)
     private val songs = KugouSongSource(loader)
-    private val utility = loader.loadClass("com.kugou.framework.service.util.PlaybackServiceUtil")
+    private val api = KugouApi(loader)
     private val type = loader.loadClass("com.kugou.framework.service.entity.KGMusicWrapper")
     private val image = type.getMethod("f2")
     private val avatar = type.getMethod("X1")
     private val avatarHash = type.getMethod("d2")
-    private val queueSize = utility.getMethod("Q4")
-    private val queuePosition = utility.getMethod("v4")
-    private val queueMode = utility.getMethod("t4")
-    private val queueRange = utility.getMethod("l4", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+    private val queueSize = api.method("Q4", "R4")
+    private val queuePosition = api.method("v4", "w4")
+    private val queueMode = api.method("t4", "u4")
+    private val queueRange = api.method("l4", "m4", Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)
     private val lookup by lazy { AvatarLookup(loader) }
 
     private fun read(native: Any?): Song? {
@@ -61,7 +61,7 @@ internal class KugouArtworkSource(loader: ClassLoader) : PlaylistArtworkSource<K
         private val instance = type.getMethod("j")
         private val cached = type.getMethod("l", Long::class.javaPrimitiveType, String::class.java)
         private val request = type.getDeclaredMethod("h", List::class.java, Runnable::class.java).apply { isAccessible = true }
-        private val entryType = loader.loadClass("ag5.b")
+        private val entryType = loader.loadClass(if (KugouApi(loader).updated) "ig5.b" else "ag5.b")
 
         fun resolve(song: Song, active: () -> Boolean): String? {
             val manager = instance.invoke(null) ?: return null

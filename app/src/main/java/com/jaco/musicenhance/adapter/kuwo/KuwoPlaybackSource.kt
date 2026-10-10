@@ -1,12 +1,8 @@
 package com.jaco.musicenhance.adapter.kuwo
 
 import android.graphics.Bitmap
-import android.graphics.drawable.BitmapDrawable
 import android.os.Handler
 import android.os.Looper
-import android.view.ViewGroup
-import android.widget.ImageView
-import com.jaco.musicenhance.adapter.NativePlayerViews
 import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.hook.safeHook
@@ -152,10 +148,8 @@ internal class KuwoPlaybackSource(
                 .also { lastSnapshot = it }
         }
 
-        /** The native flip page has separate iv_cover and iv_blur_bg images of the same size. */
-        fun readArtwork(root: ViewGroup): Bitmap? = runCatching {
-            val image = NativePlayerViews.find(root) { NativePlayerViews.resourceName(it) == "iv_cover" } as? ImageView
-            ((image?.drawable as? BitmapDrawable)?.bitmap)?.takeUnless { it.isRecycled }?.let { return it }
+        /** The module manager supplies artwork without creating a flip page or scanning Views. */
+        fun readArtwork(): Bitmap? = runCatching {
             val manager = modules.getMethod("O").invoke(null) ?: return null
             (lyricsApi.getMethod("h").invoke(manager) as? Bitmap)?.takeUnless { it.isRecycled }
         }.getOrNull()

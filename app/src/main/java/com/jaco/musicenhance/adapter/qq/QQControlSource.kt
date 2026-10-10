@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.player.model.PlayerControlState
+import com.jaco.musicenhance.player.model.PlayerSnapshot
 import java.lang.reflect.Modifier
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -12,6 +13,8 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
     @Volatile private var state = PlayerControlState()
     private val refreshing = AtomicBoolean()
     private val changingMode = AtomicBoolean()
+    private val changingFavorite = AtomicBoolean()
+    @Volatile private var released = false
     private var lastFailure = ""
 
     private val api by lazy { Api(classLoader) }
@@ -22,9 +25,11 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
     }
 
     fun refresh() {
+        if (released) return
         if (!refreshing.compareAndSet(false, true)) return
         val queued = worker.post {
             try {
+                if (released) return@post
                 readState()
             } catch (error: Throwable) {
                 reportFailure(error)
@@ -36,10 +41,12 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
     }
 
     fun cycleRepeat(): Boolean {
+        if (released) return false
         // Serialize clicks so a slow service response cannot queue several stale mode changes.
         if (!changingMode.compareAndSet(false, true)) return true
         val queued = worker.post {
             try {
+                if (released) return@post
                 val playEnvironment = api.getPlayEnvironment.invoke(null)
                 val current = api.getPlayMode.invoke(playEnvironment) as Int
                 val target = QQRepeatModes.next(current)
@@ -47,7 +54,7 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
                 if (service != null) {
                     val accepted = api.setPlayMode.invoke(service, target, api.modeChangeSource) == true
                     moduleInfo("QQ direct repeat: $current -> $target, accepted=$accepted")
-                    if (accepted) {
+                    if (accepted && !released) {
                         state = state.copy(repeatMode = QQRepeatModes.decode(target))
                     }
                 }
@@ -62,7 +69,36 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
         return queued
     }
 
+    /** Same collection manager used by QQ's widget; keeps host validation and cloud synchronization. */
+    fun toggleFavorite(player: PlayerSnapshot): Boolean {
+        if (released || !changingFavorite.compareAndSet(false, true)) return false
+        val queued = worker.post {
+            try {
+                if (released) return@post
+                val environment = api.getPlayEnvironment.invoke(null)
+                val song = api.getPlaySong.invoke(environment) ?: return@post
+                if ((api.songTitle.invoke(song) as? String)?.trim() != player.title.trim()) return@post
+                val id = api.songId.invoke(song)
+                val manager = api.userDataGet.invoke(null)
+                if (api.isLikeDataInit.invoke(manager) != true || released) return@post
+                val favorite = api.isILike.invoke(manager, song) == true
+                if (api.getPlaySong.invoke(environment)?.let { api.songId.invoke(it) } != id) return@post
+                val accepted = if (favorite) api.removeFavorite.invoke(manager, song) == true
+                    else api.addFavorite.invoke(manager, song) == 0
+                moduleInfo("QQ collection action: favorite=$favorite, accepted=$accepted")
+                if (!released) readState()
+            } catch (error: Throwable) {
+                reportFailure(error)
+            } finally { changingFavorite.set(false) }
+        }
+        if (!queued) changingFavorite.set(false)
+        return queued
+    }
+
+    fun release() { released = true }
+
     private fun readState() {
+        if (released) return
         val playEnvironment = api.getPlayEnvironment.invoke(null)
         val mode = QQRepeatModes.decode(api.getPlayMode.invoke(playEnvironment) as Int)
         val song = api.getPlaySong.invoke(playEnvironment)
@@ -74,7 +110,7 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
         val favorite = if (song != null && ready) api.isILike.invoke(manager, song) as Boolean else null
         val currentSong = api.getPlaySong.invoke(playEnvironment)
         val currentId = currentSong?.let { api.songId.invoke(it) as Long }
-        if (currentId != songId) return
+        if (currentId != songId || released) return
         state = PlayerControlState(mode, favorite, songTitle)
     }
 
@@ -102,6 +138,8 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
         val userDataGet = users.getMethod("get")
         val isILike = users.getMethod("isILike", song)
         val isLikeDataInit = users.getMethod("isILikeDataInit")
+        val addFavorite = users.getMethod("addToILike", song)
+        val removeFavorite = users.getMethod("deleteFromILike", song)
         val playerService = type("com.tencent.qqmusicplayerprocess.servicenew.k").declaredFields.single {
             Modifier.isStatic(it.modifiers) && it.type == service
         }.apply { isAccessible = true }

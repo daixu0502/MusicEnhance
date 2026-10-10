@@ -2,7 +2,6 @@ package com.jaco.musicenhance.adapter.lxx
 
 import android.app.Activity
 import android.os.Looper
-import android.view.ViewGroup
 import com.jaco.musicenhance.adapter.NativePlayerPage
 import com.jaco.musicenhance.device.CoverScreenDetector
 import com.jaco.musicenhance.hook.PlayerActivityRouter
@@ -80,9 +79,8 @@ internal object LxxPlayerHooks {
 
     private fun show(activity: Activity, page: Page, api: Api): Boolean {
         val owner = WeakReference(activity)
-        val root = activity.window.decorView as? ViewGroup ?: return false
         val accepted = PlayerActivityRouter.onNativePageShown(activity, NativePlayerPage(
-            page.id, WeakReference(root),
+            page.id,
             onLaunchFailed = {
                 owner.get()?.takeUnless { it.isFinishing || it.isDestroyed }?.let { current ->
                     PlayerActivityRouter.onNativePageHidden(current, page.id)
@@ -102,7 +100,7 @@ internal object LxxPlayerHooks {
                     val bridge = page.bridge.get()
                     if (page.nativeShown && bridge == null) false else {
                         if (page.nativeShown && !page.popRequested) {
-                            // Inner-screen/restored native page: remove it behind the common shield.
+                            // Inner-screen/restored native page: remove it before exposing the home underneath.
                             page.popRequested = true
                             try {
                                 api.pop.invoke(bridge, page.id, api.createPopOptions(), "musicenhance.lxx.pop",

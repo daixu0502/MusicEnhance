@@ -1,9 +1,7 @@
 package com.jaco.musicenhance.adapter.qq
 
 import android.app.Activity
-import android.view.ViewGroup
 import com.jaco.musicenhance.adapter.MusicPlayerAdapter
-import com.jaco.musicenhance.adapter.NativePlayerViews
 import com.jaco.musicenhance.player.PlayerDataSource
 import com.jaco.musicenhance.player.PlayerSession
 import com.jaco.musicenhance.player.artwork.ArtworkDiskCache
@@ -13,7 +11,8 @@ import java.io.File
 
 internal object QQPlayerAdapter : MusicPlayerAdapter {
     override val profile get() = QQPlayerProfile
-    override fun createSession(activity: Activity, nativeRoot: ViewGroup): PlayerSession {
+    override fun installHooks(loader: ClassLoader) = QQPlayerHooks.install(loader)
+    override fun createSession(activity: Activity): PlayerSession {
         val controls = QQControlSource(activity.classLoader)
         val playback = QQPlaybackSource(activity.classLoader)
         val media = MediaSessionDataSource
@@ -26,7 +25,7 @@ internal object QQPlayerAdapter : MusicPlayerAdapter {
             media.actions.copy(
                 seekAndPlay = { playback.seekAndPlay(it, media.snapshot()) },
                 cycleRepeat = controls::cycleRepeat,
-                toggleFavorite = { NativePlayerViews.clickControl(nativeRoot, FAVORITE_KEYWORDS) || media.actions.toggleFavorite() },
+                toggleFavorite = { controls.toggleFavorite(media.snapshot()) },
             ),
             QQLyricsProvider(activity.classLoader),
             PlaylistArtworkProvider("QQ Music", { QQArtworkApi(activity.classLoader) },
@@ -35,8 +34,7 @@ internal object QQPlayerAdapter : MusicPlayerAdapter {
                 // resource names. Its MediaSession publishes the unadorned native cover;
                 // scanning arbitrary ImageViews can mistake a theme background for that cover.
                 acceptNativeArtwork = artworkFilter::accepts),
-            onRelease = playback::release,
+            onRelease = { playback.release(); controls.release() },
         )
     }
-    private val FAVORITE_KEYWORDS = listOf("favorite", "favourite", "collect", "like", "love", "fav", "收藏", "喜欢", "爱心")
 }

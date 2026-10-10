@@ -2,7 +2,6 @@ package com.jaco.musicenhance.adapter.lxx
 
 import android.app.Activity
 import android.app.Application
-import android.view.ViewGroup
 import com.jaco.musicenhance.adapter.MusicPlayerAdapter
 import com.jaco.musicenhance.player.PlayerSession
 import com.jaco.musicenhance.player.media.MediaSessionDataSource
@@ -18,7 +17,7 @@ internal object LxxPlayerAdapter : MusicPlayerAdapter {
     override fun onApplicationCreated(application: Application) = LxxStateBridge.prepare(application)
     override fun onActivityReady(activity: Activity) = LxxPlayerHooks.observe(activity)
 
-    override fun createSession(activity: Activity, nativeRoot: ViewGroup): PlayerSession {
+    override fun createSession(activity: Activity): PlayerSession {
         val playback = LxxPlaybackSource()
         return PlayerSession(
             profile.displayName, playback,

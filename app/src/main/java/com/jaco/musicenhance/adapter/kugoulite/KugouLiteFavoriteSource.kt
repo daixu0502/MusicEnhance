@@ -2,14 +2,15 @@ package com.jaco.musicenhance.adapter.kugoulite
 
 import com.jaco.musicenhance.adapter.PolledFavoriteControl
 import android.app.Activity
-import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.player.model.PlayerSnapshot
-import java.lang.reflect.Modifier
+import java.lang.reflect.Proxy
 import java.util.Locale
 
-/** 5.2.9's favorite database and native action delegate, independent of player button tags. */
-internal class KugouLiteFavoriteSource(private val activity: Activity) : PolledFavoriteControl.Source {
-    private val loader = activity.classLoader
+/** 5.2.9 collection manager and action delegate; requires only the existing home Activity. */
+internal class KugouLiteFavoriteSource(
+    private val loader: ClassLoader,
+    private val hostActivity: () -> Activity?,
+) : PolledFavoriteControl.Source {
     private val service = loader.loadClass("com.kugou.framework.service.util.PlaybackServiceUtil")
     private val songType = loader.loadClass("com.kugou.framework.service.entity.KGMusicWrapper")
     private val current = service.getMethod("s0")
@@ -54,15 +55,24 @@ internal class KugouLiteFavoriteSource(private val activity: Activity) : PolledF
 
     /** Called only for an explicit click, on main, as the native delegate may open login/permission UI. */
     override fun toggle(state: PolledFavoriteControl.State): Boolean {
+        val activity = hostActivity() ?: return false
         if (activity.isFinishing || activity.isDestroyed || currentSong()?.key != state.trackKey) return false
-        // LandPlayerActivity.b -> p.a -> LandPlayerPage.e. Resolve by declared type because
-        // Kotlin source names differ from the actual obfuscated field names in the APK.
-        val api = fieldOfType(activity, "com.kugou.android.app.player.land.p")
-        val page = api?.let { fieldOfType(it, "com.kugou.android.app.player.land.ILandPlayerPage") }
-        val provider = page?.let { fieldOfType(it, "com.kugou.android.app.player.land.ILandProvider") }
-        if (provider == null) {
-            moduleInfo("Kugou Lite favorite: native provider unavailable; activity=${activity.javaClass.name}")
-            return false
+        val activityType = loader.loadClass("com.kugou.common.base.AbsFrameworkActivity")
+        if (!activityType.isInstance(activity)) return false
+        // 5.2.9 u()->M()/t() only needs the live home Activity, current track and optional
+        // contribution metadata. No native player, LandPlayerPage or ILandProvider is constructed.
+        val provider = Proxy.newProxyInstance(loader, arrayOf(providerType)) { proxy, method, args ->
+            when (method.name) {
+                "getActivity" -> hostActivity()?.takeIf(activityType::isInstance)
+                    ?: error("Kugou Lite home Activity unavailable")
+                "getContext" -> activity.applicationContext
+                "j0" -> current.invoke(null)
+                "l0" -> null // Nullable ContributionEntity, absent outside the native contribution UI.
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> proxy === args?.firstOrNull()
+                "toString" -> "MusicEnhanceFavoriteProvider"
+                else -> error("Unsupported Kugou Lite favorite provider call: ${method.name}")
+            }
         }
         val delegate = createDelegate.newInstance(provider)
         try {
@@ -75,14 +85,4 @@ internal class KugouLiteFavoriteSource(private val activity: Activity) : PolledF
         return true
     }
 
-    private fun fieldOfType(instance: Any, typeName: String): Any? {
-        val expected = loader.loadClass(typeName)
-        var type: Class<*>? = instance.javaClass
-        while (type != null) {
-            type.declaredFields.firstOrNull { !Modifier.isStatic(it.modifiers) && expected.isAssignableFrom(it.type) }
-                ?.let { return it.apply { isAccessible = true }.get(instance) }
-            type = type.superclass
-        }
-        return null
-    }
 }

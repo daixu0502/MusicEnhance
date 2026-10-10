@@ -2,10 +2,8 @@ package com.jaco.musicenhance.adapter.kugoulite
 
 import com.jaco.musicenhance.adapter.PolledFavoriteControl
 import android.app.Activity
-import android.view.ViewGroup
 import com.jaco.musicenhance.adapter.CachedNativeLyricsProvider
 import com.jaco.musicenhance.adapter.MusicPlayerAdapter
-import com.jaco.musicenhance.adapter.NativePlayerViews
 import com.jaco.musicenhance.adapter.nativePlayerSession
 import com.jaco.musicenhance.player.PlayerSession
 import com.jaco.musicenhance.player.artwork.ArtworkDiskCache
@@ -18,8 +16,8 @@ internal object KugouLitePlayerAdapter : MusicPlayerAdapter {
         KugouLitePlayerHooks.install(loader)
         KugouLiteLyricsSource.install(loader)
     }
-    override fun onPlayerUnavailable(activity: Activity) = KugouLitePlayerHooks.onCoverPlayerUnavailable(activity)
-    override fun createSession(activity: Activity, nativeRoot: ViewGroup): PlayerSession {
+    override fun onActivityReady(activity: Activity) = KugouLitePlayerHooks.observe(activity)
+    override fun createSession(activity: Activity): PlayerSession {
         val playback = KugouLitePlaybackSource(activity.classLoader)
         val session = nativePlayerSession(
             profile.displayName,
@@ -27,10 +25,9 @@ internal object KugouLitePlayerAdapter : MusicPlayerAdapter {
             artwork = PlaylistArtworkProvider(
                 "Kugou Lite", { KugouLiteArtworkSource(activity.classLoader) },
                 ArtworkDiskCache(File(activity.cacheDir, "musicenhance-artwork")),
-                readNativeArtwork = { NativePlayerViews.findArtwork(nativeRoot) },
             ),
             repeatApi = { KugouLiteRepeatSource(activity.classLoader) },
-            favorite = PolledFavoriteControl({ KugouLiteFavoriteSource(activity) }),
+            favorite = PolledFavoriteControl({ KugouLiteFavoriteSource(activity.classLoader, KugouLitePlayerHooks::homeActivity) }),
         )
         return session.copy(
             actions = session.actions.copy(seekAndPlay = { playback.seekAndPlay(it, session.data.snapshot()) }),

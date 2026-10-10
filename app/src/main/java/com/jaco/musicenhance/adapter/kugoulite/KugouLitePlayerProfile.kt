@@ -8,7 +8,7 @@ internal val KugouLitePlayerProfile = MusicAppProfile(
     displayName = "酷狗概念版",
     enabledPreference = Prefs.HOOK_KUGOU_LITE_MUSIC,
     homeActivityNames = setOf("com.kugou.android.app.MediaActivity"),
-    playerActivityMatcher = { it == KugouLitePlayerLauncher.ACTIVITY_NAME },
+    playerActivityMatcher = { it == "com.kugou.android.app.player.land.LandPlayerActivity" },
     horizontalActivityMatcher = { false },
     activityNamespaces = setOf("com.kugou.android"),
 )

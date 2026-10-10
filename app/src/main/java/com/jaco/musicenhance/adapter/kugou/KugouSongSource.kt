@@ -3,7 +3,7 @@ package com.jaco.musicenhance.adapter.kugou
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 import java.util.Locale
 
-/** Immutable identities copied from the 20.8.2 service; never retain its mutable queue objects. */
+/** Immutable identities copied from the native service; never retain its mutable queue objects. */
 internal class KugouSongSource(loader: ClassLoader) {
     data class Song(
         val hash: String, val mixId: Long, val extraId: String,
@@ -14,8 +14,7 @@ internal class KugouSongSource(loader: ClassLoader) {
             (artist.isBlank() || player.artist.isBlank() || artist == player.artist.trim())
     }
 
-    private val utility = loader.loadClass("com.kugou.framework.service.util.PlaybackServiceUtil")
-    private val current = utility.getMethod("Q1")
+    private val current = KugouApi(loader).currentSong
     private val type = loader.loadClass("com.kugou.framework.service.entity.KGMusicWrapper")
     private val hash = type.getMethod("getHashValue")
     private val mixId = type.getMethod("getMixId")

@@ -1,11 +1,12 @@
 package com.jaco.musicenhance.adapter.kugoulite
 
 import android.app.Activity
-import android.os.Bundle
 import android.view.View
+import com.jaco.musicenhance.adapter.NativePlayerPage
 import com.jaco.musicenhance.device.CoverScreenDetector
 import com.jaco.musicenhance.hook.hookEnabled
 import com.jaco.musicenhance.hook.module
+import com.jaco.musicenhance.hook.PlayerActivityRouter
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.hook.safeHook
 import io.github.libxposed.api.XposedInterface.Hooker
@@ -13,54 +14,39 @@ import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.util.WeakHashMap
 
-/** 5.2.9 already declares a separate player Activity with live artwork/favorite controls. */
+/** Intercept 5.2.9 player navigation before its Fragment or landscape Activity is created. */
 internal object KugouLitePlayerHooks {
-    private val launcher = KugouLitePlayerLauncher()
+    private const val FRAGMENT_NAME = "com.kugou.android.app.player.YoungPlayerFragment"
     private var ready = false
 
-    fun install(loader: ClassLoader) = safeHook("Kugou Lite independent player") {
-        val player = loader.loadClass(KugouLitePlayerLauncher.ACTIVITY_NAME)
+    private var home = WeakReference<Activity>(null)
+    fun homeActivity() = home.get()?.takeUnless { it.isFinishing || it.isDestroyed }
+    fun observe(activity: Activity) {
+        if (KugouLitePlayerProfile.isHomeActivity(activity.javaClass.name)) home = WeakReference(activity)
+    }
+
+    fun install(loader: ClassLoader) = safeHook("Kugou Lite direct player") {
         val delegate = loader.loadClass("com.kugou.common.base.ViewPagerFrameworkDelegate")
-        val fragment = loader.loadClass(KugouLitePlayerLauncher.FRAGMENT_NAME)
+        val fragment = loader.loadClass(FRAGMENT_NAME)
         val getActivity = delegate.getMethod("getActivity")
         val navigation = delegate.declaredMethods.single {
             it.name == "Q1" && it.parameterCount == 8 && it.parameterTypes[1] == Class::class.java &&
                 it.parameterTypes.last() == Runnable::class.java && it.returnType == Void.TYPE
         }
-        // Resolve the complete policy first. Never redirect into an Activity whose landscape or
-        // idle-exit hooks failed to install. Original native lifecycles still run and release data.
-        val windowPolicies = listOf("w", "C", "A", "v", "handleStatusBarMode").map { player.getDeclaredMethod(it) } +
-            player.getDeclaredMethod("onEvent", loader.loadClass("of.a"))
-        windowPolicies.forEach { method ->
-            hook(method, "policy.${method.name}") { chain ->
-                val activity = chain.thisObject as? Activity
-                if (activity != null && ownsWindow(activity)) null else chain.proceed()
-            }
-        }
-        // A queued exit runnable may have been scheduled before the window was taken over.
-        hook(player.getDeclaredMethod("x", player), "idle.exit") { chain ->
-            val activity = chain.args.firstOrNull() as? Activity
-            if (activity != null && ownsWindow(activity)) null else chain.proceed()
-        }
-        hook(player.getDeclaredMethod("onCreate", Bundle::class.java), "create") { chain ->
-            val activity = chain.thisObject as Activity
-            val result = chain.proceed()
-            if (KugouLitePlayerLauncher.isModuleLaunch(activity)) {
-                launcher.onCreated(activity)
-                moduleInfo("Kugou Lite independent player created; task=${activity.taskId}")
-            }
-            result
-        }
-        hook(player.getDeclaredMethod("onDestroy"), "destroy") { chain ->
-            try { chain.proceed() } finally { launcher.onDestroyed(chain.thisObject as Activity) }
-        }
         hook(navigation, "navigate") { chain ->
             val destination = chain.args[1] as? Class<*>
             var redirected = false
-            if (destination?.name == KugouLitePlayerLauncher.FRAGMENT_NAME && chain.args[6] != true) {
+            if (destination?.name == FRAGMENT_NAME && chain.args[6] != true) {
                 safeHook("Kugou Lite player navigation") {
                     val activity = getActivity.invoke(chain.thisObject) as? Activity
-                    if (activity != null && canRedirect(activity)) redirected = launcher.launch(activity)
+                    if (activity != null && canRedirect(activity)) {
+                        observe(activity)
+                        val receiver = WeakReference(chain.thisObject)
+                        val arguments = chain.args.toTypedArray().also { it[7] = null }
+                        redirected = PlayerActivityRouter.launch(activity) {
+                            receiver.get()?.let { navigation.invoke(it, *arguments) }
+                        }
+                    }
                 }
             }
             if (redirected) {
@@ -100,8 +86,16 @@ internal object KugouLitePlayerHooks {
                         safeHook("Kugou Lite restored player transfer") {
                             val current = reference.get() ?: return@safeHook
                             try {
-                                if (canRedirect(activity) && isVisible.invoke(current) == true && launcher.launch(activity)) {
-                                    finish.invoke(current)
+                                if (canRedirect(activity) && isVisible.invoke(current) == true) {
+                                    val identity = System.identityHashCode(current)
+                                    val owner = WeakReference(activity)
+                                    PlayerActivityRouter.onNativePageShown(activity, NativePlayerPage(
+                                        identity, dismiss = {
+                                            reference.get()?.let { finish.invoke(it) }
+                                            owner.get()?.let { PlayerActivityRouter.onNativePageHidden(it, identity) }
+                                            true
+                                        },
+                                    ))
                                 }
                             } finally {
                                 // YoungPlayerFragment is cached by the host and may be reused later.
@@ -118,18 +112,8 @@ internal object KugouLitePlayerHooks {
 
     private fun canRedirect(activity: Activity): Boolean = ready &&
         KugouLitePlayerProfile.isHomeActivity(activity.javaClass.name) &&
-        !activity.isFinishing && !activity.isDestroyed && hookEnabled(KugouLitePlayerProfile) &&
+        !activity.isFinishing && !activity.isDestroyed && !PlayerActivityRouter.isNativeFallback(activity) && hookEnabled(KugouLitePlayerProfile) &&
         CoverScreenDetector.isCoverScreen(activity)
-
-    private fun ownsWindow(activity: Activity): Boolean = ready &&
-        (KugouLitePlayerLauncher.isModuleLaunch(activity) ||
-            (hookEnabled(KugouLitePlayerProfile) && CoverScreenDetector.isCoverScreen(activity)))
-
-    fun onCoverPlayerUnavailable(activity: Activity) {
-        // A cover-only launch must not expose the native landscape page after unfolding or
-        // disabling the module. Finishing restores the existing home task and widget policy.
-        if (KugouLitePlayerLauncher.isModuleLaunch(activity) && !activity.isFinishing) activity.finish()
-    }
 
     private fun hook(method: Method, suffix: String, callback: Hooker) {
         method.isAccessible = true

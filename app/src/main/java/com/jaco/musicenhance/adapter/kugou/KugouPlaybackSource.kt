@@ -43,7 +43,7 @@ internal class KugouPlaybackSource(
     }
 
     private class Api(loader: ClassLoader) {
-        val service = loader.loadClass("com.kugou.framework.service.util.PlaybackServiceUtil").getMethod("E2")
+        val service = KugouApi(loader).service
         private val type = loader.loadClass("com.kugou.framework.service.IKugouPlaybackService")
         val seek = type.getMethod("seek", Int::class.javaPrimitiveType)
         val isPlaying = type.getMethod("isPlaying")

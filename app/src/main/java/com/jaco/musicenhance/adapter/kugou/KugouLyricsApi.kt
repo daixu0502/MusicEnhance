@@ -3,7 +3,7 @@ package com.jaco.musicenhance.adapter.kugou
 import com.jaco.musicenhance.player.model.LyricLine
 import java.io.File
 
-/** 20.8.2 contract: native cache/downloader plus a separate KRC/LRC parser. */
+/** 20.8.2 / 20.8.4 contract: native cache/downloader plus a separate KRC/LRC parser. */
 internal class KugouLyricsApi(loader: ClassLoader) {
     data class Song(val identity: KugouSongSource.Song, val displayName: String,
         val mimeType: String, val fileId: Long, val durationMs: Long)
@@ -15,8 +15,11 @@ internal class KugouLyricsApi(loader: ClassLoader) {
     private val duration = songType.getMethod("D1")
     private val managerType = loader.loadClass("com.kugou.framework.lyric.LyricManager")
     private val dataType = loader.loadClass("com.kugou.framework.lyric.LyricData")
-    private val requestType = loader.loadClass("oe5.b")
     private val downloadType = loader.loadClass("com.kugou.framework.lyric.g")
+    private val downloadConstructor = downloadType.constructors.single {
+        it.parameterCount == 2 && it.parameterTypes[1] == Boolean::class.javaPrimitiveType
+    }
+    private val requestType = downloadConstructor.parameterTypes[0]
     private val searchType = loader.loadClass("com.kugou.framework.lyric.protocol.b")
     private val audioKindType = loader.loadClass("com.kugou.common.entity.j")
 
@@ -77,8 +80,7 @@ internal class KugouLyricsApi(loader: ClassLoader) {
             requestType.getMethod("b0", Int::class.javaPrimitiveType).invoke(request, value("d"))
             requestType.getMethod("e0", Int::class.javaPrimitiveType).invoke(request, value("l"))
         }
-        val downloader = downloadType.getConstructor(requestType, Boolean::class.javaPrimitiveType)
-            .newInstance(request, candidate != null)
+        val downloader = downloadConstructor.newInstance(request, candidate != null)
         downloadType.getMethod("G").invoke(downloader)
         if (!active()) return emptyList()
         val path = downloadType.getMethod("f").invoke(downloader) as? String
