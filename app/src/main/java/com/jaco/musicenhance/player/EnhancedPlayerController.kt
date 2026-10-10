@@ -56,6 +56,8 @@ internal class EnhancedPlayerController(private val session: PlayerSession) : Pl
             scheduleUpdate()
         } else {
             session.data.removeListener(sourceListener)
+            spectrumPlaying = null
+            session.actions.setSpectrumPlaybackActive(false)
         }
     }
 

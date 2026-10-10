@@ -32,6 +32,7 @@ internal object SpotifyPlayerHooks {
     @Volatile var removeFavorite: FavoriteAction? = null
 
     fun install(loader: ClassLoader) {
+        SpotifyAudioHooks.install(loader)
         safeHook("Spotify application lyrics provider") {
             // 9.1.90.2270 xzo case 1177 delegates to vbd0.q, retaining the host feature flags.
             // The application graph creates the provider even if NowPlayingActivity never opens.

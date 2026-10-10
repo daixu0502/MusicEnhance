@@ -11,6 +11,48 @@ import java.lang.reflect.Modifier
 
 /** Spotify 9.1.90.2270 contracts. Discovery inspects DEX; it never calls a candidate. */
 internal object SpotifyInterfaceRules {
+    data class AudioRendererMethods(
+        val created: Method,
+        val destroyed: Method,
+        val sessionChanged: Method,
+        val paused: Method,
+        val flushStarted: Method,
+        val flushCompleted: Method,
+        val sessionId: Method,
+        val playState: Method,
+    )
+
+    /** These callbacks are called by liborbit JNI in Spotify 9.1.90.2270. */
+    fun audioRendererMethods(loader: ClassLoader): AudioRendererMethods {
+        val owner = HostInterfaces.type(
+            loader, "spotify.audio.oboe-renderer.v1",
+            { loader.loadClass("com.spotify.playbacknative.OboeRenderer") },
+            { runCatching { audioRendererMethods(it); !it.isInterface && !Modifier.isAbstract(it.modifiers) }.getOrDefault(false) },
+        ) {
+            methods { matcher { name("onAudioSessionIdChanged"); paramTypes("int"); returnType("void") } }
+                .map { it.getMethodInstance(loader).declaringClass }.distinct()
+        }
+        return audioRendererMethods(owner)
+    }
+
+    private fun audioRendererMethods(owner: Class<*>): AudioRendererMethods {
+        fun callback(name: String, vararg params: Class<*>) = owner.getMethod(name, *params).also {
+            require(!Modifier.isStatic(it.modifiers) && !Modifier.isNative(it.modifiers) && it.returnType == Void.TYPE)
+        }
+        fun getter(name: String) = owner.getMethod(name).also {
+            require(!Modifier.isStatic(it.modifiers) && !Modifier.isNative(it.modifiers) && it.returnType == Int::class.javaPrimitiveType)
+        }
+        // A full native lifecycle contract distinguishes the renderer from unrelated session listeners.
+        callback("onRouteChanged", Int::class.javaPrimitiveType!!)
+        return AudioRendererMethods(
+            callback("onAudioTrackCreated"), callback("onAudioTrackDestroyed"),
+            callback("onAudioSessionIdChanged", Int::class.javaPrimitiveType!!),
+            callback("onPaused", Boolean::class.javaPrimitiveType!!),
+            callback("onFlushStart"), callback("onFlushComplete"),
+            getter("getAudioSessionId"), getter("getPlayState"),
+        )
+    }
+
     fun stateBuilder(loader: ClassLoader): Method = HostInterfaces.method(
         loader, "spotify.state.builder.v1", {
             loader.loadClass("com.spotify.player.model.AutoValue_PlayerState\$Builder").getDeclaredMethod("build")
