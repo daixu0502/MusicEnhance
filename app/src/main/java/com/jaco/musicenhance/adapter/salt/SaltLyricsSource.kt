@@ -7,8 +7,8 @@ import com.jaco.musicenhance.player.model.PlayerSnapshot
 
 /** Copies the host's parsed local lyrics. No download, search, or dependency on its lyrics screen. */
 internal class SaltLyricsSource(loader: ClassLoader, private val playback: SaltPlaybackSource) {
-    private val linesField = loader.loadClass("androidx.media3.uc1").getField("\u0528")
-    private val lineType = loader.loadClass("androidx.media3.ed1")
+    private val linesField = loader.loadClass("androidx.media3.${playback.api.lyricsClass}").getField("\u0528")
+    private val lineType = loader.loadClass("androidx.media3.${playback.api.lyricLineClass}")
     private val startField = lineType.getField("\u037f")
     private val textField = lineType.getField("\u052b")
     private var previousDocument: Any? = null

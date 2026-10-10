@@ -1,7 +1,6 @@
 package com.jaco.musicenhance.adapter.salt
 
 import android.app.Activity
-import android.view.ViewGroup
 import com.jaco.musicenhance.adapter.CachedNativeLyricsProvider
 import com.jaco.musicenhance.adapter.MusicPlayerAdapter
 import com.jaco.musicenhance.player.PlayerDataSource
@@ -14,7 +13,7 @@ internal object SaltPlayerAdapter : MusicPlayerAdapter {
     override fun installHooks(loader: ClassLoader) = SaltPlayerHooks.install(loader)
     override fun onActivityReady(activity: Activity) = SaltPlayerHooks.observe(activity)
 
-    override fun createSession(activity: Activity, nativeRoot: ViewGroup): PlayerSession {
+    override fun createSession(activity: Activity): PlayerSession {
         val playback = SaltPlaybackSource(activity.classLoader)
         val media = MediaSessionDataSource
         val lyrics = SaltLyricsSource(activity.classLoader, playback)

@@ -13,8 +13,8 @@ android {
         applicationId = "com.jaco.musicenhance"
         minSdk = 34
         targetSdk = 37
-        versionCode = 70
-        versionName = "2.9.1"
+        versionCode = 20902
+        versionName = "2.9.2"
 
         ndk {
             abiFilters += "arm64-v8a"

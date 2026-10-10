@@ -7,33 +7,34 @@ import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 import com.jaco.musicenhance.player.model.RepeatMode
 
-/** Private names below are verified against Salt Player 12.3.2 (2026090601). */
+/** Reads native controller flows and invokes explicit playback operations. */
 internal class SaltPlaybackSource(loader: ClassLoader) {
+    val api = SaltApi.resolve(loader)
     private val controller = loader.loadClass("com.salt.music.service.MusicController")
     private val songType = loader.loadClass("com.salt.music.data.entry.Song")
-    private val flowValue = loader.loadClass("androidx.media3.l14").getMethod("getValue")
     private val currentSong = controller.getField("\u07a0")
+    private val flowValue = currentSong.type.getMethod("getValue")
     private val cover = controller.getField("\u0860")
     private val lyrics = controller.getField("\u0791")
     private val lyricsOwner = controller.getField("\u0793")
     private val repeat = controller.getField("\u07a4")
-    private val pairType = loader.loadClass("androidx.media3.eh2")
-    private val hasCover = pairType.getField("\u052e")
-    private val coverBitmap = pairType.getField("\u052f")
+    private val pairType = loader.loadClass("androidx.media3.${api.coverPairClass}")
+    private val hasCover = pairType.getField(api.coverPresentField)
+    private val coverBitmap = pairType.getField(api.coverBitmapField)
     private val songId = songType.getMethod("getId")
     private val songTitle = songType.getMethod("getTitle")
     private val songArtist = songType.getMethod("getArtist")
     private val songAlbum = songType.getMethod("getAlbum")
     private val songDuration = songType.getMethod("getDuration")
-    private val isPlaying = controller.getMethod("\u078c")
-    private val play = controller.getMethod("\u0794")
-    private val pause = controller.getMethod("\u0792")
-    private val next = controller.getMethod("\u0798")
-    private val previous = controller.getMethod("\u079a")
-    private val changeRepeat = controller.getMethod("\u0780")
+    private val isPlaying = controller.getMethod(api.playingMethod)
+    private val play = controller.getMethod(api.playMethod)
+    private val pause = controller.getMethod(api.pauseMethod)
+    private val next = controller.getMethod(api.nextMethod)
+    private val previous = controller.getMethod(api.previousMethod)
+    private val changeRepeat = controller.getMethod(api.repeatMethod)
     private val playback = controller.getField("\u078b")
     private val seek = playback.type.getMethod("\u052e", Long::class.javaPrimitiveType)
-    private val cueOffset = loader.loadClass("androidx.media3.jd3").getField("\u0868")
+    private val cueOffset = loader.loadClass("androidx.media3.${api.cueClass}").getField("\u0868")
     private val main = Handler(Looper.getMainLooper())
     private var released = false
     private var seekGeneration = 0L
