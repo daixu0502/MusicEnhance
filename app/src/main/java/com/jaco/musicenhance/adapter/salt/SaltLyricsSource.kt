@@ -4,23 +4,10 @@ import com.jaco.musicenhance.player.model.LyricLine
 import com.jaco.musicenhance.player.model.LyricsSnapshot
 import com.jaco.musicenhance.player.model.LyricsStatus
 import com.jaco.musicenhance.player.model.PlayerSnapshot
-import com.jaco.musicenhance.adapter.discovery.HostInterfaces
 import com.jaco.musicenhance.player.lyrics.LrcLyricsParser
 
 /** Copies the host's parsed local lyrics. No download, search, or dependency on its lyrics screen. */
-internal class SaltLyricsSource(loader: ClassLoader, private val playback: SaltPlaybackSource) {
-    private val linesField by lazy { HostInterfaces.field(loader, "salt.lyrics.parsed-lines.v1", known = {
-        loader.loadClass("androidx.media3.${playback.api.lyricsClass}").getField("\u0528")
-    }, validate = { List::class.java.isAssignableFrom(it.type) }) {
-        // Erased document/owner flows are replaced by the publication hook on unknown versions.
-        emptyList()
-    } }
-    private val lineType by lazy { HostInterfaces.type(loader, "salt.lyrics.line.v1", known = { loader.loadClass("androidx.media3.${playback.api.lyricLineClass}") }) {
-        methods { matcher { name = "toString"; usingStrings("LyricsLine(startTime=", ", endTime=", ", pureMainText='") } }
-            .map { it.getMethodInstance(loader).declaringClass }.distinct()
-    } }
-    private val startField by lazy { lineType.getField("\u037f") }
-    private val textField by lazy { lineType.getField("\u052b") }
+internal class SaltLyricsSource(private val playback: SaltPlaybackSource) {
     private var previousDocument: Any? = null
     private var previousKey = ""
     private var cached: LyricsSnapshot? = null
@@ -35,10 +22,10 @@ internal class SaltLyricsSource(loader: ClassLoader, private val playback: SaltP
         if (document === previousDocument && key == previousKey) return cached
         val lines = if (nativeDocument == null) parseSourceText(requireNotNull(published).sourceText).map {
             it.copy(startMs = it.startMs - offsetMs)
-        } else (linesField.get(nativeDocument) as? List<*>)?.mapNotNull { line ->
+        } else (playback.data.lyricLines.get(nativeDocument) as? List<*>)?.mapNotNull { line ->
             line ?: return@mapNotNull null
-            val text = textField.get(line) as? String ?: return@mapNotNull null
-            LyricLine(startField.getLong(line) - offsetMs, text)
+            val text = playback.data.lineText.get(line) as? String ?: return@mapNotNull null
+            LyricLine(playback.data.lineStart.getLong(line) - offsetMs, text)
         }.orEmpty()
         if (playback.song()?.id != song.id || (nativeDocument != null && playback.lyricsDocument(song) !== document) ||
             (nativeDocument == null && SaltNativeDataHooks.lyrics !== published)) return null

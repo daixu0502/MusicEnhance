@@ -6,37 +6,15 @@ import android.os.Looper
 import com.jaco.musicenhance.hook.moduleInfo
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 import com.jaco.musicenhance.player.model.RepeatMode
-import com.jaco.musicenhance.adapter.discovery.HostInterfaces
 import com.jaco.musicenhance.player.media.MediaSessionDataSource
 
 /** Reads native controller flows and invokes explicit playback operations. */
 internal class SaltPlaybackSource(loader: ClassLoader) {
-    val api = SaltApi.hint(loader)
-    private val controls by lazy { SaltControlApi(loader, api) }
-    private val controller = loader.loadClass("com.salt.music.service.MusicController")
+    private val controls by lazy { SaltControlApi(loader) }
+    internal val data by lazy { SaltDataApi(loader) }
     private val songType = loader.loadClass("com.salt.music.data.entry.Song")
     private val currentSong get() = controls.currentSong
     private val flowValue get() = currentSong.type.getMethod("getValue")
-    private val cover by lazy { HostInterfaces.field(loader, "salt.artwork.flow.v1", known = { controller.getField("\u0860") }) {
-        methods { matcher { paramCount = 1; returnType = "java.lang.Object"
-            invokeMethods { add { declaredClass = "com.salt.music.service.SongPicture"; name = "getDefaultCoverBitmap\$default" } }
-        } }
-            .flatMap { it.usingFields }.map { it.field }.filter { it.className == controller.name }
-            .map { it.getFieldInstance(loader) }.filter { field -> runCatching { field.type.getMethod("getValue") }.isSuccess }.distinct()
-    } }
-    private val lyrics by lazy { HostInterfaces.field(loader, "salt.lyrics.flow.v1", known = { controller.getField("\u0791") }) {
-        // Generic signatures, when retained, distinguish the document from other StateFlows.
-        controller.declaredFields.filter { it.genericType.typeName.contains("androidx.media3.${api.lyricsClass}>") }
-    } }
-    private val lyricsOwner by lazy { HostInterfaces.field(loader, "salt.lyrics.owner-flow.v1", known = { controller.getField("\u0793") }) {
-        // Owner and document are captured together by SaltNativeDataHooks on erased builds.
-        emptyList()
-    } }
-    private val pairType by lazy { HostInterfaces.type(loader, "salt.artwork.pair.v1", known = { loader.loadClass("androidx.media3.${api.coverPairClass}") }) {
-        emptyList() // Erased Pair<Object,Object> fields do not identify bitmap and presence safely.
-    } }
-    private val hasCover by lazy { pairType.getField(api.coverPresentField) }
-    private val coverBitmap by lazy { pairType.getField(api.coverBitmapField) }
     private val songId = songType.getMethod("getId")
     private val songTitle = songType.getMethod("getTitle")
     private val songArtist = songType.getMethod("getArtist")
@@ -66,16 +44,16 @@ internal class SaltPlaybackSource(loader: ClassLoader) {
     fun artwork(player: PlayerSnapshot): Bitmap? {
         val requested = song()?.takeIf { it.matches(player) } ?: return null
         val bitmap = runCatching {
-            val field = cover
+            val field = data.coverFlow
             val pair = field.type.getMethod("getValue").invoke(field.get(null)) ?: return@runCatching null
-            if (hasCover.get(pair) != true) null else coverBitmap.get(pair) as? Bitmap
+            if (data.coverPresent.get(pair) != true) null else data.coverBitmap.get(pair) as? Bitmap
         }.getOrNull() ?: SaltNativeDataHooks.artwork(requested.id) ?: return null
         return bitmap.takeIf { !it.isRecycled && song()?.id == requested.id }
     }
 
     fun lyricsDocument(song: Song): Any? {
-        val owner = lyricsOwner
-        val documentFlow = lyrics
+        val owner = data.lyricsOwnerFlow
+        val documentFlow = data.lyricsFlow
         val readOwner = owner.type.getMethod("getValue")
         if (readOwner.invoke(owner.get(null)) != song.id) return null
         val document = documentFlow.type.getMethod("getValue").invoke(documentFlow.get(null)) ?: return null

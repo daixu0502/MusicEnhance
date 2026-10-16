@@ -1,14 +1,11 @@
 package com.jaco.musicenhance.adapter.salt
 
 import android.graphics.Bitmap
-import com.jaco.musicenhance.adapter.discovery.HostInterfaces
 import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.hook.safeHook
 import java.lang.ref.WeakReference
-import java.lang.reflect.Modifier
 import java.lang.reflect.Executable
 import io.github.libxposed.api.XposedInterface
-import org.luckypray.dexkit.query.enums.StringMatchType
 
 /** Observe verified publication points instead of guessing among erased StateFlow fields. */
 internal object SaltNativeDataHooks {
@@ -22,20 +19,10 @@ internal object SaltNativeDataHooks {
     fun artwork(ownerId: String): Bitmap? = cover?.takeIf { it.ownerId == ownerId }?.bitmap?.get()?.takeUnless { it.isRecycled }
 
     fun install(loader: ClassLoader) {
-        val hint = SaltApi.hint(loader)
-        val controller = loader.loadClass("com.salt.music.service.MusicController")
+        val data = SaltDataApi(loader)
         safeHook("Salt native lyric publication") {
-            val document = HostInterfaces.type(loader, "salt.lyrics.document.v1", known = { loader.loadClass("androidx.media3.${hint.lyricsClass}") },
-                validate = { type -> type.declaredFields.count { it.type == String::class.java && !Modifier.isStatic(it.modifiers) } == 1 }) {
-                methods { matcher { name = "toString"; usingStrings(listOf("LyricsDocument(sourceText=", ", lyricsLines="), StringMatchType.Contains) } }
-                    .map { it.getMethodInstance(loader).declaringClass }.distinct()
-            }
-            val source = document.declaredFields.single { it.type == String::class.java && !Modifier.isStatic(it.modifiers) }.apply { isAccessible = true }
-            val publish = HostInterfaces.method(loader, "salt.lyrics.publish.v1", known = { controller.getMethod("\u0865", document, String::class.java) },
-                validate = { Modifier.isStatic(it.modifiers) && it.parameterTypes.contentEquals(arrayOf(document, String::class.java)) && it.returnType == Void.TYPE }) {
-                methods { matcher { declaredClass = controller.name; paramTypes(document, String::class.java); returnType = "void" } }
-                    .map { it.getMethodInstance(loader) }
-            }
+            val source = data.lyricSource
+            val publish = data.lyricPublish
             hook(publish, "musicenhance.salt.lyrics.publish") { chain ->
                 val result = chain.proceed()
                 safeHook("Salt copy lyric source") {
@@ -47,17 +34,10 @@ internal object SaltNativeDataHooks {
             }
         }
         safeHook("Salt native artwork publication") {
-            val controls = SaltControlApi(loader, hint)
+            val controls = SaltControlApi(loader)
             val current = controls.currentSong
             val value = current.type.getMethod("getValue")
-            val publish = HostInterfaces.method(loader, "salt.artwork.publish.v1", known = {
-                controller.getMethod("\u052e", controller, Bitmap::class.java)
-            }, validate = { Modifier.isStatic(it.modifiers) && it.parameterTypes.contentEquals(arrayOf(controller, Bitmap::class.java)) && it.returnType == Void.TYPE }) {
-                methods { matcher { declaredClass = controller.name; paramTypes(controller, Bitmap::class.java); returnType = "void" } }
-                    .filter { method -> method.invokes.any { it.className == "com.salt.music.service.SongPicture" && it.name == "getDefaultCoverBitmap" } &&
-                        method.invokes.any { it.className == "android.graphics.Bitmap" && it.name == "createBitmap" } }
-                    .map { it.getMethodInstance(loader) }
-            }
+            val publish = data.artworkPublish
             hook(publish, "musicenhance.salt.artwork.publish") { chain ->
                 // The host committed this original bitmap to the current song before creating its blurred background.
                 safeHook("Salt copy native artwork") {

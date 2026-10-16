@@ -36,7 +36,7 @@ internal class InterfaceCache(private val file: File, private val fingerprint: S
         private const val MAX_CACHE_BYTES = 256 * 1024
         const val MAX_ENTRIES = 512
         // Change when a semantic matching rule changes, including a signature-compatible change.
-        const val RULE_REVISION = 3
+        const val RULE_REVISION = 4
 
         fun fingerprint(packageName: String, versionCode: Long, apkPaths: List<String>): String {
             val hash = MessageDigest.getInstance("SHA-256")

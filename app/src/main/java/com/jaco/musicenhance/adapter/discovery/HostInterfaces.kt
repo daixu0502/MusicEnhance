@@ -294,7 +294,7 @@ internal object HostInterfaces {
                     bridges += DexKitBridge.create(it).also { bridge -> bridge.setThreadNum(2) }
                 }
                 require(bridges.isNotEmpty()) { "No host DEX files" }
-                return DexSearch(loader, bridges)
+                return DexSearch(loader, bridges, apkPaths)
             } catch (error: Throwable) { bridges.forEach { it.close() }; throw error }
         }
 
@@ -334,7 +334,6 @@ internal object HostInterfaces {
         "cn.kuwo.player" to setOf(12224L),
         "com.kugou.android" to setOf(20849L),
         "com.kugou.android.lite" to setOf(11590L),
-        "com.salt.music" to setOf(2026100701L),
         "com.spotify.music" to setOf(147078674L),
     )
     private val VERIFIED_NAMES = mapOf(
@@ -342,7 +341,6 @@ internal object HostInterfaces {
         "cn.kuwo.player" to setOf("12.2.2.4"),
         "com.kugou.android" to setOf("20.8.2", "20.8.4"),
         "com.kugou.android.lite" to setOf("5.2.9"),
-        "com.salt.music" to setOf("12.3.2", "12.4.1-play"),
         "com.lxwalnut.music.mobile" to setOf("26.09.20"),
         "com.spotify.music" to setOf("9.1.90.2270"),
     )

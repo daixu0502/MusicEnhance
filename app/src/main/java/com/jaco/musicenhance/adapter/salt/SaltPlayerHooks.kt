@@ -1,7 +1,10 @@
 package com.jaco.musicenhance.adapter.salt
 
 import android.app.Activity
+import android.os.Handler
+import android.os.Looper
 import com.jaco.musicenhance.adapter.NativePlayerPage
+import com.jaco.musicenhance.device.CoverScreenDetector
 import com.jaco.musicenhance.hook.PlayerActivityRouter
 import com.jaco.musicenhance.hook.module
 import com.jaco.musicenhance.hook.moduleInfo
@@ -15,17 +18,19 @@ import io.github.libxposed.api.XposedInterface
 /** Salt uses a Compose sheet, not a dedicated native playback Activity. */
 internal object SaltPlayerHooks {
     private val sheets = WeakHashMap<Activity, WeakReference<Any>>()
+    private val homes = WeakHashMap<Activity, Boolean>()
+    private val main = Handler(Looper.getMainLooper())
     private val composingActivity = ThreadLocal<Activity>()
     private var api: SaltSheetApi? = null
+    private var routeReady = false
+    private var recoveryAttempted = false
     private val installed = mutableSetOf<Executable>()
 
     fun install(loader: ClassLoader) = safeHook("Salt player sheet") {
         val sheetApi = SaltSheetApi(loader)
         api = sheetApi
         val activityType = loader.loadClass("com.salt.music.ui.MainActivity")
-        val compose = HostInterfaces.method(loader, "salt.home.player-composition.v1", known = { activityType.declaredMethods.single {
-            it.name == "\u078f" && it.parameterTypes.size == 2 && it.parameterTypes[0] == Int::class.javaPrimitiveType
-        } }, validate = { it.parameterCount == 2 && it.parameterTypes[0] == Int::class.javaPrimitiveType }) {
+        val compose = HostInterfaces.method(loader, "salt.home.player-composition.v1", validate = { it.parameterCount == 2 && it.parameterTypes[0] == Int::class.javaPrimitiveType }) {
             methods { matcher { declaredClass = activityType.name; paramCount = 2; usingEqStrings("auto_open_playback_screen") } }
                 .map { it.getMethodInstance(loader) }
         }
@@ -52,7 +57,9 @@ internal object SaltPlayerHooks {
             }
             if (intercepted) sheetApi.unit else chain.proceed()
         }
-        moduleInfo("Salt player sheet route installed (${sheetApi.contract.version})")
+        routeReady = true
+        homes.keys.toList().forEach(::recoverUnboundHome)
+        moduleInfo("Salt player sheet route installed (discovered)")
     }
 
     @Synchronized private fun hook(executable: Executable, id: String, hooker: XposedInterface.Hooker) {
@@ -63,10 +70,30 @@ internal object SaltPlayerHooks {
 
     fun observe(activity: Activity) {
         if (!SaltPlayerProfile.isHomeActivity(activity.javaClass.name)) return
+        homes.putIfAbsent(activity, false)
         val sheetApi = api ?: return
-        val sheet = sheets[activity]?.get() ?: return
+        val sheet = sheets[activity]?.get() ?: run { recoverUnboundHome(activity); return }
         // Covers auto-open on startup and moving an already expanded inner-screen sheet outside.
         if (sheetApi.isExpanded(sheet)) show(activity, sheet, sheetApi)
+    }
+
+    private fun recoverUnboundHome(activity: Activity) {
+        if (!routeReady || recoveryAttempted || homes[activity] != false || sheets[activity]?.get() != null) return
+        val owner = WeakReference(activity)
+        main.post {
+            val home = owner.get() ?: return@post
+            if (recoveryAttempted || homes[home] != false || sheets[home]?.get() != null || home.isFinishing || home.isDestroyed ||
+                !home.hasWindowFocus() || !CoverScreenDetector.isCoverScreen(home)) return@post
+            // A first APK scan can finish after Compose remembered its sheet. Rebuild this
+            // foreground page once with saved state, so the installed owner hook sees creation.
+            // Cached starts bind normally; never loop if a changed host no longer binds.
+            homes[home] = true
+            recoveryAttempted = true
+            safeHook("Salt first-scan page recovery") {
+                moduleInfo("Salt rebuilding unbound home after interface discovery")
+                home.recreate()
+            }
+        }
     }
 
     private fun show(activity: Activity, sheet: Any, sheetApi: SaltSheetApi): Boolean {

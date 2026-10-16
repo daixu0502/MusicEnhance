@@ -11,7 +11,15 @@ import java.io.Closeable
 internal class DexSearch internal constructor(
     val loader: ClassLoader,
     private val bridges: List<DexKitBridge>,
+    apkPaths: List<String> = emptyList(),
 ) : Closeable {
+    private val code by lazy { DexCode(apkPaths) }
+
+    fun fieldsReadAs(method: MethodData, typeName: String) = code.fieldsReadAs(method.descriptor, typeName)
+    fun fieldsUpdatedWith(method: MethodData, typeName: String) = code.fieldsUpdatedWith(method.descriptor, typeName)
+    fun fieldsAssignedFromParameter(method: MethodData, index: Int) = code.fieldsAssignedFromParameter(method.descriptor, index)
+    fun fieldsFollowingString(method: MethodData, label: String, typeName: String) =
+        code.fieldsFollowingString(method.descriptor, label, typeName)
     fun methods(query: FindMethod.() -> Unit): List<MethodData> = bridges.flatMap {
         it.findMethod(FindMethod().apply(query).also { request ->
             require(request.matcher != null && !request.findFirst) { "Discovery must match all candidates" }
