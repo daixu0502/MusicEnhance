@@ -4,7 +4,7 @@ import com.jaco.musicenhance.player.artwork.PlaylistArtworkWindow
 import com.jaco.musicenhance.player.model.RepeatMode
 import com.jaco.musicenhance.adapter.qq.QQArtworkSource.Song
 
-/** QQ 20.8.5.8 / 20.9.0.8 private song and artwork URL methods; no network or UI state. */
+/** Discovered native song and artwork URL methods; no network or UI state. */
 internal class QQArtworkApi(private val classLoader: ClassLoader) : QQArtworkSource {
     private val songClass = Class.forName("com.tencent.qqmusicplayerprocess.songinfo.SongInfo", false, classLoader)
     private val process = QQPlayProcessApi(classLoader)
@@ -13,12 +13,12 @@ internal class QQArtworkApi(private val classLoader: ClassLoader) : QQArtworkSou
     private val getPlaySong = playMethods.getMethod("getPlaySong")
     private val songTitle = QQInterfaceRules.songTitle(classLoader, songClass)
     private val songId = QQInterfaceRules.songId(classLoader, songClass)
-    private val coverUrl = QQInterfaceRules.artwork(classLoader, songClass, "e", 2)
+    private val coverUrl = QQInterfaceRules.artwork(classLoader, songClass, "album")
     private val sizedCoverUrl get() = runCatching {
-        QQInterfaceRules.artwork(classLoader, songClass, "f", 3)
+        QQInterfaceRules.artwork(classLoader, songClass, "sized")
     }.getOrNull()
     private val singerCoverUrl get() = runCatching {
-        QQInterfaceRules.artwork(classLoader, songClass, "o", 2)
+        QQInterfaceRules.artwork(classLoader, songClass, "singer")
     }.getOrNull()
 
     // Optional: a missing queue API must not disable current-song artwork on another QQ version.

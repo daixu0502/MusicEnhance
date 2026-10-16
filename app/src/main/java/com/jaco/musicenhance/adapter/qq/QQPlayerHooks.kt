@@ -10,7 +10,7 @@ import com.jaco.musicenhance.player.PlayerActivitySessions
 import java.lang.reflect.Modifier
 import java.lang.reflect.Method
 
-/** QQ 20.8.5.8 / 20.9.0.8 normally complete player navigation in BasePlayerActivity.onResume. */
+/** Complete native player navigation when the enhanced Activity resumes instead. */
 internal object QQPlayerHooks {
     private val installed = mutableSetOf<Method>()
     fun install(loader: ClassLoader) = safeHook("QQ player navigation completion") {

@@ -46,15 +46,18 @@ internal object HostInterfaces {
         engine(loader).onResolved(key, callback)
     }
 
-    fun method(loader: ClassLoader, key: String, known: () -> Method,
+    /** Register dependent capabilities together, using one worker/index rather than UI retries. */
+    fun preload(loader: ClassLoader, key: String, prepare: () -> Unit) = engine(loader).preload(key, prepare)
+
+    fun method(loader: ClassLoader, key: String, known: () -> Method = { throw Unavailable("Discovery required: $key") },
                validate: (Method) -> Boolean = { true }, discover: DexSearch.() -> List<Method>): Method =
         resolve(loader, key, known, validate, discover)
 
-    fun field(loader: ClassLoader, key: String, known: () -> Field,
+    fun field(loader: ClassLoader, key: String, known: () -> Field = { throw Unavailable("Discovery required: $key") },
               validate: (Field) -> Boolean = { true }, discover: DexSearch.() -> List<Field>): Field =
         resolve(loader, key, known, validate, discover)
 
-    fun type(loader: ClassLoader, key: String, known: () -> Class<*>,
+    fun type(loader: ClassLoader, key: String, known: () -> Class<*> = { throw Unavailable("Discovery required: $key") },
              validate: (Class<*>) -> Boolean = { true }, discover: DexSearch.() -> List<Class<*>>): Class<*> =
         resolve(loader, key, known, validate, discover)
 
@@ -102,6 +105,8 @@ internal object HostInterfaces {
     ) {
         private val rules = linkedMapOf<String, Rule>()
         private val callbacks = linkedMapOf<String, () -> Unit>()
+        private val preloadKeys = mutableSetOf<String>()
+        private val preloads = mutableListOf<() -> Unit>()
         private val activeSearch = ThreadLocal<DexSearch>()
         private val visiting = ThreadLocal.withInitial { mutableSetOf<String>() }
         private val cached = linkedMapOf<String, InterfaceDescriptor>()
@@ -159,6 +164,12 @@ internal object HostInterfaces {
 
         @Synchronized fun onResolved(key: String, callback: () -> Unit) { callbacks[key] = callback }
 
+        @Synchronized fun preload(key: String, prepare: () -> Unit) {
+            if (!preloadKeys.add(key)) return
+            preloads += prepare
+            schedule()
+        }
+
         fun resolve(key: String, known: () -> Any, validate: (Any) -> Boolean,
                                   discover: DexSearch.() -> List<Any>): Any {
             val rule = synchronized(this) { rules.getOrPut(key) {
@@ -205,7 +216,8 @@ internal object HostInterfaces {
         }
 
         @Synchronized private fun schedule() {
-            if (!prepared || prepareFailed || scheduled || rules.values.none { it.status == "pending" }) return
+            if (!prepared || prepareFailed || scheduled ||
+                (preloads.isEmpty() && rules.values.none { it.status == "pending" })) return
             scheduled = true
             executor.execute(::scan)
         }
@@ -213,6 +225,12 @@ internal object HostInterfaces {
         private fun scan() {
             var changed = false
             try {
+                val preparations = synchronized(this) { preloads.toList().also { preloads.clear() } }
+                fun prepare() = preparations.forEach { callback ->
+                    runCatching(callback).onFailure { moduleInfo("Interface preload incomplete: ${it.message}") }
+                }
+                val resolvedBefore = synchronized(this) { rules.values.count { it.value != null } }
+                prepare() // A valid descriptor cache can satisfy the entire batch without DEX.
                 // Retry the verified/cached paths before paying for a DEX index.
                 synchronized(this) { rules.values.toList().filter { it.status == "pending" } }.forEach { rule ->
                     try {
@@ -235,6 +253,7 @@ internal object HostInterfaces {
                 if (needsSearch) openSearch().use { search ->
                     activeSearch.set(search)
                     try {
+                        prepare() // Nested lookups now share this background index.
                         // Nested dependency rules are resolved on this worker using the same index.
                         while (true) {
                             val batch = synchronized(this) { rules.values.filter { it.status == "pending" }.toList() }
@@ -255,6 +274,7 @@ internal object HostInterfaces {
                         }
                     } finally { activeSearch.remove() }
                 }
+                changed = changed || synchronized(this) { rules.values.count { it.value != null } > resolvedBefore }
                 val saved = synchronized(this) { cache to cached.toMap() }
                 saved.first?.write(saved.second)
             } catch (error: Throwable) {
@@ -311,7 +331,6 @@ internal object HostInterfaces {
     }.getOrElse { runCatching { ApplicationInfo::class.java.getField("versionCode").getInt(info).toLong() }.getOrDefault(-1) }
 
     private val VERIFIED_CODES = mapOf(
-        "com.tencent.qqmusic" to setOf(7408L, 7458L),
         "cn.kuwo.player" to setOf(12224L),
         "com.kugou.android" to setOf(20849L),
         "com.kugou.android.lite" to setOf(11590L),
@@ -319,7 +338,6 @@ internal object HostInterfaces {
         "com.spotify.music" to setOf(147078674L),
     )
     private val VERIFIED_NAMES = mapOf(
-        "com.tencent.qqmusic" to setOf("20.8.5.8", "20.9.0.8"),
         "com.apple.android.music" to setOf("6.5.2"),
         "cn.kuwo.player" to setOf("12.2.2.4"),
         "com.kugou.android" to setOf("20.8.2", "20.8.4"),

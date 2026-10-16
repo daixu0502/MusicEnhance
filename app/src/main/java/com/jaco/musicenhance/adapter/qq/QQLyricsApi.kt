@@ -4,11 +4,11 @@ import com.jaco.musicenhance.player.model.LyricLine
 import com.jaco.musicenhance.player.model.LyricTimeline
 import java.lang.reflect.Proxy
 
-/** QQ 20.8.5.8 / 20.9.0.8 reflection only. Host objects stay inside the QQ adapter. */
+/** Discovered native lyric protocol. Host objects stay inside the QQ adapter. */
 internal class QQLyricsApi(private val classLoader: ClassLoader) {
     data class Song(val nativeValue: Any, val id: Long)
 
-    private fun hostClass(name: String) = Class.forName(name, false, classLoader)
+    private fun hostClass(name: String) = classLoader.loadClass(name)
     private val songClass = hostClass("com.tencent.qqmusicplayerprocess.songinfo.SongInfo")
     private val process = QQPlayProcessApi(classLoader)
     private val playEnvironment = process.getEnvironment
@@ -76,7 +76,7 @@ internal class QQLyricsApi(private val classLoader: ClassLoader) {
             .filterNotNull().take(MAX_SENTENCES).map { sentence ->
                 LyricLine(sentenceStartTime.getLong(sentence), (sentenceText.get(sentence) as? String).orEmpty())
             }.toList()
-        // QQ renders at playbackTime - lyric.f; our media seek time is sentence.b + lyric.f.
+        // QQ renders at playbackTime - fileOffset; seek targets include that same offset.
         return LyricTimeline.normalize(lines, offset.getInt(lyric).toLong())
     }
 

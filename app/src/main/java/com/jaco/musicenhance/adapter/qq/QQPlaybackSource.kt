@@ -8,7 +8,7 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-/** QQ 20.8.5.8 / 20.9.0.8 lyric-page controls, independent of the MediaSession command queue. */
+/** Discovered native lyric controls, independent of the MediaSession command queue. */
 internal class QQPlaybackSource(
     loader: ClassLoader,
     private val worker: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { task ->

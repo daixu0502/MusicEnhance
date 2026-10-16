@@ -7,7 +7,7 @@ import com.jaco.musicenhance.player.model.PlayerControlState
 import com.jaco.musicenhance.player.model.PlayerSnapshot
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** QQ Music 20.8.5.8 / 20.9.0.8 service and collection store. Never opens a mode popup. */
+/** Discovered QQ service and collection store. Never opens a mode popup. */
 internal class QQControlSource(private val classLoader: ClassLoader) {
     @Volatile private var state = PlayerControlState()
     private val refreshing = AtomicBoolean()
@@ -134,7 +134,7 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
         private val ipc = process.type
         private val song = type("com.tencent.qqmusicplayerprocess.songinfo.SongInfo")
         private val users by lazy { QQInterfaceRules.users(classLoader, song) }
-        private val service = type("com.tencent.qqmusicplayerprocess.servicenew.IQQPlayerServiceNew")
+        private val service by lazy { type("com.tencent.qqmusicplayerprocess.servicenew.IQQPlayerServiceNew") }
         val getPlayEnvironment = process.getEnvironment
         val getPlayMode = ipc.getMethod("getPlayMode")
         val getPlaySong = ipc.getMethod("getPlaySong")
@@ -146,9 +146,9 @@ internal class QQControlSource(private val classLoader: ClassLoader) {
         val addFavorite by lazy { users.getMethod("addToILike", song) }
         val removeFavorite by lazy { users.getMethod("deleteFromILike", song) }
         val playerService by lazy { QQInterfaceRules.playerService(classLoader, service) }
-        val setPlayMode = service.getMethod("setPlayMode", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-        private val from = type("com.tencent.qqmusicplayerprocess.servicenew.FromInfo")
-        val modeChangeSource = from.getField("value").getInt(from.getField("FROM_PLAY_MODE_POPUP_WINDOW").get(null))
+        val setPlayMode by lazy { service.getMethod("setPlayMode", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType) }
+        private val from by lazy { type("com.tencent.qqmusicplayerprocess.servicenew.FromInfo") }
+        val modeChangeSource by lazy { from.getField("value").getInt(from.getField("FROM_PLAY_MODE_POPUP_WINDOW").get(null)) }
     }
 
     companion object {

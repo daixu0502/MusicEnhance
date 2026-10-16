@@ -2,6 +2,7 @@ package com.jaco.musicenhance.adapter.qq
 
 import android.app.Activity
 import com.jaco.musicenhance.adapter.MusicPlayerAdapter
+import com.jaco.musicenhance.adapter.discovery.HostInterfaces
 import com.jaco.musicenhance.player.PlayerDataSource
 import com.jaco.musicenhance.player.PlayerSession
 import com.jaco.musicenhance.player.artwork.ArtworkDiskCache
@@ -11,7 +12,10 @@ import java.io.File
 
 internal object QQPlayerAdapter : MusicPlayerAdapter {
     override val profile get() = QQPlayerProfile
-    override fun installHooks(loader: ClassLoader) = QQPlayerHooks.install(loader)
+    override fun installHooks(loader: ClassLoader) {
+        HostInterfaces.preload(loader, "qq.capabilities") { QQInterfaceRules.prepare(loader) }
+        QQPlayerHooks.install(loader)
+    }
     override fun createSession(activity: Activity): PlayerSession {
         val controls = QQControlSource(activity.classLoader)
         val playback = QQPlaybackSource(activity.classLoader)
