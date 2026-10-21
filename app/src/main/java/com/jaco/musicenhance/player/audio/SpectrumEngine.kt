@@ -58,7 +58,7 @@ internal object SpectrumEngine {
         val channelCount: Int,
         val streamId: Long,
     ) {
-        val detector = SpectralFluxBeatDetector()
+        var detector: SpectralFluxBeatDetector? = null
         val timestamp = AudioTimestamp()
         var submittedFrames = 0L
         var anchorFramePosition = 0L
@@ -133,7 +133,18 @@ internal object SpectrumEngine {
         val firstFramePosition = state.submittedFrames
         val acceptedFrames = sampleCount / state.channelCount
         state.submittedFrames += acceptedFrames
-        val batch = state.detector.process(
+        // Keep counting writes for a correct presentation clock after reopening the UI, but
+        // stop FFT analysis and IPC while no enhanced player consumes the result.
+        if (!PlayerProcessBridge.hasSpectrumConsumers()) {
+            state.detector = null
+            return
+        }
+        if (state.detector == null) {
+            state.detector = SpectralFluxBeatDetector()
+            state.timestampAvailable = false
+            state.lastTimestampQueryNanos = 0L
+        }
+        val batch = requireNotNull(state.detector).process(
             capture.samples,
             state.sampleRate,
             state.channelCount,
