@@ -1,5 +1,6 @@
 package com.jaco.musicenhance.player.media
 
+import android.graphics.Bitmap
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSession
@@ -19,12 +20,14 @@ internal object MediaSessionStore {
     var controlReader: MediaSessionControlReader? = null
     private var lastSnapshot = PlayerSnapshot.Empty
     private var lastSnapshotReceivedAt = SystemClock.elapsedRealtime()
+    private val publishUpdate = Runnable { publish() }
 
     private val callback = object : MediaController.Callback() {
-        override fun onMetadataChanged(metadata: MediaMetadata?) = publish()
-        override fun onPlaybackStateChanged(state: PlaybackState?) = publish()
+        override fun onMetadataChanged(metadata: MediaMetadata?) = schedulePublish()
+        override fun onPlaybackStateChanged(state: PlaybackState?) = schedulePublish()
 
         override fun onSessionDestroyed() {
+            mainHandler.removeCallbacks(publishUpdate)
             controller = null
             lastSnapshot = PlayerSnapshot.Empty
             lastSnapshotReceivedAt = SystemClock.elapsedRealtime()
@@ -42,17 +45,28 @@ internal object MediaSessionStore {
                 controller = next
                 runCatching { next.registerCallback(callback, mainHandler) }
             }
-            publish()
+            schedulePublish()
         }
     }
 
     fun addListener(listener: (PlayerSnapshot) -> Unit) {
         listeners += listener
+        if (listeners.size == 1) PlayerProcessBridge.setObserving(true)
         listener(snapshot())
     }
 
     fun removeListener(listener: (PlayerSnapshot) -> Unit) {
         listeners -= listener
+        if (listeners.isEmpty()) PlayerProcessBridge.setObserving(false)
+    }
+
+    fun hasLocalSession() = controller != null
+
+    fun updateRemoteArtwork(trackKey: String, artwork: Bitmap) {
+        if (controller != null || lastSnapshot.metadataKey != trackKey) return
+        // Keep the original playback-clock anchor while a slow image read completes.
+        lastSnapshot = lastSnapshot.copy(artwork = artwork)
+        notifyListeners(lastSnapshot)
     }
 
     fun playPause() {
@@ -135,7 +149,7 @@ internal object MediaSessionStore {
     }
 
     fun republishLocalSnapshot() {
-        if (controller != null) PlayerProcessBridge.publishSnapshot(snapshot())
+        if (controller != null) schedulePublish()
     }
 
     fun snapshot(): PlayerSnapshot {
@@ -185,7 +199,13 @@ internal object MediaSessionStore {
         return true
     }
 
+    private fun schedulePublish() {
+        mainHandler.removeCallbacks(publishUpdate)
+        mainHandler.post(publishUpdate)
+    }
+
     private fun publish() {
+        if (listeners.isEmpty() && !PlayerProcessBridge.hasRemoteConsumers()) return
         val value = snapshot()
         notifyListeners(value)
         PlayerProcessBridge.publishSnapshot(value)
