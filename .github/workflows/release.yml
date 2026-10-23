@@ -27,6 +27,11 @@ jobs:
       - name: Test publishing rules
         run: python3 -m unittest discover -s .github/scripts/tests -v
 
+      - name: Check LSPosed publishing access
+        env:
+          LSPOSED_TOKEN: ${{ secrets.LSPOSED_TOKEN }}
+        run: python3 .github/scripts/release.py check_lsposed
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -56,11 +61,17 @@ jobs:
         run: python3 .github/scripts/release.py prepare
 
       - name: Install required Android packages
-        if: steps.plan.outputs.publish == 'true'
         env:
           SDK_PLATFORM_PACKAGE: ${{ steps.plan.outputs.sdk_platform_package }}
           BUILD_TOOLS: ${{ steps.plan.outputs.build_tools }}
-        run: sdkmanager "$SDK_PLATFORM_PACKAGE" "build-tools;$BUILD_TOOLS"
+          BUILD_SOURCE: ${{ steps.plan.outputs.publish }}
+        run: |
+          if [ "$BUILD_SOURCE" = 'true' ]; then
+            sdkmanager "$SDK_PLATFORM_PACKAGE" "build-tools;$BUILD_TOOLS"
+          else
+            # Sync retries still inspect the already published APK with aapt2.
+            sdkmanager "build-tools;$BUILD_TOOLS"
+          fi
 
       - name: Test, check and build signed release
         if: steps.plan.outputs.publish == 'true'
@@ -101,6 +112,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/release.py publish
+
+      # Also runs when prepare skips an already public source release, so failed syncs can be retried.
+      - name: Sync published release to LSPosed repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LSPOSED_TOKEN: ${{ secrets.LSPOSED_TOKEN }}
+        run: python3 .github/scripts/release.py mirror
 
       - name: Remove temporary signing key
         if: always()

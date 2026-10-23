@@ -13,8 +13,8 @@ android {
         applicationId = "vip.chener.musicenhance"
         minSdk = 34
         targetSdk = 37
-        versionCode = 30201
-        versionName = "3.2.1"
+        versionCode = 30202
+        versionName = "3.2.2-beta"
 
         ndk {
             abiFilters += "arm64-v8a"
