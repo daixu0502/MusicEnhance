@@ -77,10 +77,10 @@ jobs:
         if: steps.plan.outputs.publish == 'true'
         env:
           MUSICENHANCE_KEYSTORE: ${{ runner.temp }}/musicenhance-release.jks
-          MUSICENHANCE_KEYSTORE_BASE64: ${{ secrets.MUSICENHANCE_KEYSTORE_BASE64 }}
-          MUSICENHANCE_KEY_ALIAS: ${{ secrets.MUSICENHANCE_KEY_ALIAS }}
-          MUSICENHANCE_STORE_PASSWORD: ${{ secrets.MUSICENHANCE_STORE_PASSWORD }}
-          MUSICENHANCE_KEY_PASSWORD: ${{ secrets.MUSICENHANCE_KEY_PASSWORD }}
+          MUSICENHANCE_KEYSTORE_BASE64: ${{ secrets.KEY_STORE }}
+          MUSICENHANCE_KEY_ALIAS: ${{ secrets.ALIAS }}
+          MUSICENHANCE_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          MUSICENHANCE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           python3 .github/scripts/release.py signing
           # An unset key password uses the store password in app/build.gradle.kts.

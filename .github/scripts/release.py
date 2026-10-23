@@ -209,14 +209,17 @@ def prepare():
 
 
 def signing():
-    for name in ("MUSICENHANCE_KEYSTORE_BASE64", "MUSICENHANCE_KEY_ALIAS", "MUSICENHANCE_STORE_PASSWORD"):
-        if not os.environ.get(name):
-            raise ValueError(f"Missing repository Actions secret: {name}")
+    # The workflow maps repository Secret names to the existing local signing environment.
+    for environment_name, secret_name in (("MUSICENHANCE_KEYSTORE_BASE64", "KEY_STORE"),
+                                          ("MUSICENHANCE_KEY_ALIAS", "ALIAS"),
+                                          ("MUSICENHANCE_STORE_PASSWORD", "KEY_STORE_PASSWORD")):
+        if not os.environ.get(environment_name):
+            raise ValueError(f"Missing repository Actions secret: {secret_name}")
     encoded = "".join(os.environ["MUSICENHANCE_KEYSTORE_BASE64"].split())
     try:
         key_bytes = base64.b64decode(encoded, validate=True)
     except ValueError:
-        raise ValueError("MUSICENHANCE_KEYSTORE_BASE64 is not valid Base64") from None
+        raise ValueError("KEY_STORE is not valid Base64") from None
     if not key_bytes:
         raise ValueError("The signing keystore is empty")
     keystore = Path(os.environ["MUSICENHANCE_KEYSTORE"])
