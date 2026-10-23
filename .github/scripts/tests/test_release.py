@@ -368,6 +368,33 @@ class DownloadTests(unittest.TestCase):
         urlopen.assert_not_called()
 
 
+class GitHubRequestTests(unittest.TestCase):
+    def test_repository_check_does_not_add_a_trailing_slash(self):
+        with patch.dict(os.environ, {"GITHUB_API_URL": "https://api.github.com/",
+                                     "GITHUB_SERVER_URL": "https://github.com"}), \
+                patch.object(release, "urlopen") as urlopen:
+            urlopen.return_value.__enter__.return_value.read.return_value = b'{"default_branch":"main"}'
+            api = release.GitHub(repository=release.LSPOSED_REPOSITORY, token="test-only")
+            repository = api.request("GET", "")
+        self.assertEqual("main", repository["default_branch"])
+        self.assertEqual("https://api.github.com/repos/" + release.LSPOSED_REPOSITORY,
+                         urlopen.call_args.args[0].full_url)
+
+    def test_release_and_absolute_upload_urls_remain_intact(self):
+        cases = [("releases?per_page=100&page=1",
+                  "https://api.github.com/repos/" + release.LSPOSED_REPOSITORY + "/releases?per_page=100&page=1"),
+                 ("https://uploads.github.com/repos/owner/repo/releases/1/assets?name=app.apk",
+                  "https://uploads.github.com/repos/owner/repo/releases/1/assets?name=app.apk")]
+        for endpoint, expected in cases:
+            with self.subTest(endpoint=endpoint), \
+                    patch.dict(os.environ, {"GITHUB_API_URL": "https://api.github.com",
+                                             "GITHUB_SERVER_URL": "https://github.com"}), \
+                    patch.object(release, "urlopen") as urlopen:
+                urlopen.return_value.__enter__.return_value.read.return_value = b'{}'
+                release.GitHub(repository=release.LSPOSED_REPOSITORY, token="test-only").request("GET", endpoint)
+                self.assertEqual(expected, urlopen.call_args.args[0].full_url)
+
+
 class ApkMetadataTests(unittest.TestCase):
     def test_package_and_both_versions_must_match_the_planned_tag(self):
         metadata = {"versionName": "3.2.1", "versionCode": 30201, "buildToolsVersion": "36.0.0"}

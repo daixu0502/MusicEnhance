@@ -74,7 +74,9 @@ class GitHub:
         self.token = token if token is not None else os.environ["GH_TOKEN"]
 
     def request(self, method, endpoint, payload=None, binary=None):
-        url = endpoint if endpoint.startswith("https://") else f"{self.api_url}/repos/{self.repository}/{endpoint}"
+        # GitHub's repository endpoint returns 404 when an empty endpoint adds a trailing slash.
+        repository_url = f"{self.api_url.rstrip('/')}/repos/{self.repository}"
+        url = endpoint if endpoint.startswith("https://") else repository_url + ("/" + endpoint if endpoint else "")
         if urlparse(url).hostname not in {
             urlparse(self.api_url).hostname, urlparse(self.server_url).hostname, "uploads.github.com",
         }:
