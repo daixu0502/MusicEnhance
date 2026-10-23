@@ -2,6 +2,8 @@
 
 为 **Xiaomi MIX Flip / MIX Flip 2** 设计的外屏音乐增强模块，基于 **libxposed API 102**。
 
+模块包名：`vip.chener.musicenhance`。LSPosed 模块仓库的提交信息、分发版说明和发布说明模板见 [提交指南](docs/lsposed-submission.md)。
+
 在外屏打开已适配音乐应用的播放页，即可使用统一的全屏播放器：专辑背景、低频律动、滚动歌词，以及避开摄像头的播放控件。各应用继续负责歌曲播放和数据提供，模块设置页采用 Miuix 风格。
 
 [下载版本](https://github.com/daixu0502/MusicEnhance/releases) · [反馈问题](https://github.com/daixu0502/MusicEnhance/issues) · [安装与启用](#安装与启用) · [构建与签名](#构建与签名) · [自动发布](#github-actions-自动发布)
@@ -148,7 +150,9 @@ QQ 音乐、Apple Music、酷我、酷狗普通版、酷狗概念版和 Spotify 
 
 ### 无法覆盖安装
 
-新旧 APK 必须使用相同签名证书。Debug 包、自行签名包与已安装的发布包可能使用不同证书；需要更换签名时，先记录模块配置，再卸载旧模块、安装并重新启用。
+本次包名迁移后，Android 会将 `vip.chener.musicenhance` 视为独立应用，无法覆盖旧包名版本，配置也不会自动迁移。请先记录旧配置，在 LSPosed 中停用旧模块，再安装并启用新模块、重新配置音乐应用开关；确认新模块可用后可卸载旧模块。不要同时启用两份模块。完成切换后重启手机，使系统框架和 System UI 加载新模块。
+
+同包名版本覆盖安装时，新旧 APK 必须使用相同签名证书。Debug 包、自行签名包与已安装的发布包可能使用不同证书；需要更换签名时，先记录模块配置，再卸载旧模块、安装并重新启用。
 
 ### 提交反馈
 
@@ -292,14 +296,14 @@ LX-X 的 `app/src/main/resources/lxx/state-bridge.js` 是 React Native 适配脚
 
 | 位置 | 内容 |
 | --- | --- |
-| [adapter](app/src/main/java/com/jaco/musicenhance/adapter) | 应用注册及 `qq`、`apple`、`kuwo`、`kugou`、`kugoulite`、`salt`、`lxx` 适配 |
-| [player](app/src/main/java/com/jaco/musicenhance/player) | 通用 Activity、会话、控制器和数据接口 |
-| [player/ui](app/src/main/java/com/jaco/musicenhance/player/ui) | 播放器、歌词与控件展示 |
-| [player/lyrics](app/src/main/java/com/jaco/musicenhance/player/lyrics) | 歌词提供器与交互逻辑 |
-| [player/artwork](app/src/main/java/com/jaco/musicenhance/player/artwork) | 封面下载、缓存、预取及过渡 |
-| [player/audio](app/src/main/java/com/jaco/musicenhance/player/audio) | 公共音频采样、频谱分析及播放时间轴；不依赖音乐应用的私有接口 |
-| [device](app/src/main/java/com/jaco/musicenhance/device) | 外屏识别、摄像头定位和布局 |
-| [hook](app/src/main/java/com/jaco/musicenhance/hook) | 模块入口、宿主 Hook、Activity 路由及系统窗口策略 |
+| [adapter](app/src/main/java/vip/chener/musicenhance/adapter) | 应用注册及 `qq`、`apple`、`kuwo`、`kugou`、`kugoulite`、`salt`、`lxx` 适配 |
+| [player](app/src/main/java/vip/chener/musicenhance/player) | 通用 Activity、会话、控制器和数据接口 |
+| [player/ui](app/src/main/java/vip/chener/musicenhance/player/ui) | 播放器、歌词与控件展示 |
+| [player/lyrics](app/src/main/java/vip/chener/musicenhance/player/lyrics) | 歌词提供器与交互逻辑 |
+| [player/artwork](app/src/main/java/vip/chener/musicenhance/player/artwork) | 封面下载、缓存、预取及过渡 |
+| [player/audio](app/src/main/java/vip/chener/musicenhance/player/audio) | 公共音频采样、频谱分析及播放时间轴；不依赖音乐应用的私有接口 |
+| [device](app/src/main/java/vip/chener/musicenhance/device) | 外屏识别、摄像头定位和布局 |
+| [hook](app/src/main/java/vip/chener/musicenhance/hook) | 模块入口、宿主 Hook、Activity 路由及系统窗口策略 |
 | [.github](.github) | 自动构建与发布脚本 |
 
 接入新播放器时：

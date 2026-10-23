@@ -4,17 +4,17 @@ plugins {
 }
 
 android {
-    namespace = "com.jaco.musicenhance"
+    namespace = "vip.chener.musicenhance"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.jaco.musicenhance"
+        applicationId = "vip.chener.musicenhance"
         minSdk = 34
         targetSdk = 37
-        versionCode = 30200
-        versionName = "3.2.0"
+        versionCode = 30201
+        versionName = "3.2.1"
 
         ndk {
             abiFilters += "arm64-v8a"

@@ -19,7 +19,7 @@
 
 ## 架构与职责
 
-以下源码位置均相对于 `app/src/main/java/com/jaco/musicenhance`。
+以下源码位置均相对于 `app/src/main/java/vip/chener/musicenhance`。
 
 | 位置 / 组件 | 职责 | 边界 |
 | --- | --- | --- |
