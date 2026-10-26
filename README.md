@@ -2,7 +2,7 @@
 
 为 **Xiaomi MIX Flip / MIX Flip 2** 设计的外屏音乐增强模块，基于 **libxposed API 102**。
 
-模块包名：`vip.chener.musicenhance`。LSPosed 模块仓库的提交信息、分发版说明和发布说明模板见 [提交指南](docs/lsposed-submission.md)。
+模块包名：`vip.chener.musicenhance`。LSPosed 官方模块仓库已上架。 · [官方仓库链接](https://modules.lsposed.org/module/vip.chener.musicenhance/)
 
 在外屏打开已适配音乐应用的播放页，即可使用统一的全屏播放器：专辑背景、低频律动、滚动歌词，以及避开摄像头的播放控件。各应用继续负责歌曲播放和数据提供，模块设置页采用 Miuix 风格。
 
